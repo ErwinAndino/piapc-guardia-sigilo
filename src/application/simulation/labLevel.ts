@@ -6,6 +6,17 @@ export const GRID_HEIGHT = 20;
 export const PLAYER_START: GridPoint = { x: 2, y: 2 };
 export const GUARD_START: GridPoint = { x: 27, y: 17 };
 
+export const PATROL_POINTS: readonly GridPoint[] = [
+  { x: 2, y: 2 },
+  { x: 27, y: 2 },
+  { x: 27, y: 17 },
+  { x: 2, y: 17 },
+];
+
+export const SEARCH_DURATION_MS = 4000;
+export const REPLAN_INTERVAL_MS = 400;
+export const CAPTURE_DISTANCE_PX = 24;
+
 interface BlockedRectangle {
   readonly x: number;
   readonly y: number;

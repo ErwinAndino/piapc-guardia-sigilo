@@ -1,25 +1,32 @@
 import Phaser from "phaser";
 import {
+  CAPTURE_DISTANCE_PX,
   GUARD_START,
   GRID_HEIGHT,
   GRID_WIDTH,
   LAB_MAP,
+  PATROL_POINTS,
   PLAYER_START,
+  REPLAN_INTERVAL_MS,
+  SEARCH_DURATION_MS,
   TILE_SIZE,
 } from "../../application/simulation/labLevel";
-import { calculateRoute } from "../../application/simulation/navigationDemo";
 import {
-  initialPerceptionState,
-  updatePerceptionSimulation,
-  withSoundEvent,
-  type PerceptionSimulationState,
-} from "../../application/simulation/perceptionSimulation";
-import { cellCenter, isWalkable, worldToCell, type GridPoint } from "../../domain/model/grid";
+  initialGuardSimulationState,
+  updateGuardSimulation,
+  withGuardSound,
+  type GuardSimulationState,
+} from "../../application/simulation/guardSimulation";
+import { cellCenter, isWalkable } from "../../domain/model/grid";
 import type { Vector2 } from "../../domain/model/vector";
-import { advanceAlongPath } from "../../domain/navigation/pathFollower";
-import type { SearchAlgorithm, SearchResult, SearchStatus } from "../../domain/navigation/search";
 import { timeSinceLastPerception } from "../../domain/perception/memory";
-import type { VisionReason, VisionResult } from "../../domain/perception/perception";
+import type { PerceptionFrame } from "../../application/simulation/perceptionSimulation";
+import type {
+  GuardEvent,
+  GuardState,
+} from "../../domain/behavior/guardStates";
+import type { SearchAlgorithm, SearchStatus } from "../../domain/navigation/search";
+import type { VisionReason } from "../../domain/perception/perception";
 
 const PLAYER_SPEED = 190;
 const GUARD_SPEED = 115;
@@ -40,6 +47,28 @@ const VISION_LABELS: Readonly<Record<VisionReason, string>> = {
   occluded: "OCLUIDO",
   "invalid-facing": "DIRECCION INVALIDA",
 };
+const STATE_LABELS: Readonly<Record<GuardState, string>> = {
+  patrolling: "PATRULLANDO",
+  investigating: "INVESTIGANDO",
+  chasing: "PERSIGUIENDO",
+  searching: "BUSCANDO",
+  returning: "REGRESANDO",
+  captured: "CAPTURADO",
+};
+const EVENT_LABELS: Readonly<Record<GuardEvent, string>> = {
+  "vision-acquired": "VISION",
+  "vision-lost": "PERDIO VISION",
+  "sound-heard": "OYO SONIDO",
+  "observation-changed": "NUEVA PISTA",
+  "patrol-point-reached": "PUNTO ALCANZADO",
+  "patrol-point-unreachable": "PUNTO INALCANZABLE",
+  "path-completed": "DESTINO ALCANZADO",
+  "destination-unreachable": "DESTINO INALCANZABLE",
+  "replan-needed": "REPLAN",
+  "capture-reached": "CAPTURA",
+  "search-timeout": "BUSQUEDA TERMINADA",
+  restart: "REINICIO",
+};
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle;
@@ -55,16 +84,11 @@ export class GameScene extends Phaser.Scene {
   private emitSound!: Phaser.Input.Keyboard.Key;
   private navigationGraphics!: Phaser.GameObjects.Graphics;
   private perceptionGraphics!: Phaser.GameObjects.Graphics;
-  private targetMarker!: Phaser.GameObjects.Arc;
   private lastKnownMarker!: Phaser.GameObjects.Arc;
   private navigationHud!: Phaser.GameObjects.Text;
+  private guardSim!: GuardSimulationState;
   private navigationAlgorithm: SearchAlgorithm = "astar";
-  private navigationGoal: GridPoint = GUARD_START;
-  private navigationSummary: readonly string[] = [];
   private guardFacing: Vector2 = { x: -1, y: 0 };
-  private guardWaypoints: readonly Vector2[] = [];
-  private nextWaypoint = 0;
-  private perceptionState: PerceptionSimulationState = initialPerceptionState();
 
   public constructor() {
     super("GameScene");
@@ -72,11 +96,9 @@ export class GameScene extends Phaser.Scene {
 
   public create(): void {
     this.navigationAlgorithm = "astar";
-    this.navigationGoal = GUARD_START;
+    const guardPosition = cellCenter(GUARD_START, TILE_SIZE);
+    this.guardSim = initialGuardSimulationState(guardPosition, { x: -1, y: 0 });
     this.guardFacing = { x: -1, y: 0 };
-    this.guardWaypoints = [];
-    this.nextWaypoint = 0;
-    this.perceptionState = initialPerceptionState();
     this.cameras.main.setBackgroundColor("#10161c");
     this.drawGrid();
 
@@ -117,15 +139,10 @@ export class GameScene extends Phaser.Scene {
 
     this.perceptionGraphics = this.add.graphics().setDepth(1);
     this.navigationGraphics = this.add.graphics().setDepth(2);
-    const guardPosition = cellCenter(GUARD_START, TILE_SIZE);
     this.guard = this.add
       .circle(guardPosition.x, guardPosition.y, 11, 0x6b8afd)
       .setStrokeStyle(2, 0xb9c5ff)
       .setDepth(4);
-    this.targetMarker = this.add
-      .circle(0, 0, 10, 0x000000, 0)
-      .setStrokeStyle(3, 0x73c991)
-      .setDepth(5);
     this.lastKnownMarker = this.add
       .circle(0, 0, 7, 0x000000, 0)
       .setStrokeStyle(2, 0xe16969)
@@ -133,7 +150,7 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
 
     this.add
-      .text(16, 14, "H3 / PERCEPCION Y MOVIMIENTO", {
+      .text(16, 14, "H4 / MAQUINA DE ESTADOS", {
         color: "#9eb4c2",
         fontFamily: "monospace",
         fontSize: "14px",
@@ -152,9 +169,8 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(10);
 
-    this.input.on("pointerdown", this.handlePointerDown, this);
-    this.renderNavigation();
-    this.updatePerception(0);
+    const initial = updateGuardSimulation(this.guardSim, this.simulationInput(0, 0));
+    this.guardSim = initial.state;
   }
 
   public update(time: number, delta: number): void {
@@ -165,11 +181,10 @@ export class GameScene extends Phaser.Scene {
 
     if (Phaser.Input.Keyboard.JustDown(this.toggleAlgorithm)) {
       this.navigationAlgorithm = this.navigationAlgorithm === "astar" ? "bfs" : "astar";
-      this.renderNavigation();
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.emitSound)) {
-      this.perceptionState = withSoundEvent(this.perceptionState, {
+      this.guardSim = withGuardSound(this.guardSim, {
         position: { x: this.player.x, y: this.player.y },
         radius: SOUND_RADIUS,
         emittedAtMs: time,
@@ -188,8 +203,41 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.playerBody.setVelocity(velocity.x, velocity.y);
-    this.updateGuardMovement(delta);
-    this.updatePerception(time);
+
+    const frame = updateGuardSimulation(
+      this.guardSim,
+      this.simulationInput(time, delta),
+    );
+    this.guardSim = frame.state;
+    this.guardFacing = frame.facing;
+    this.guard.setPosition(frame.position.x, frame.position.y);
+    this.guard.setFillStyle(frame.current === "captured" ? 0xcd5c5c : 0x6b8afd);
+    this.guard.setStrokeStyle(2, frame.current === "captured" ? 0xffa3a3 : 0xb9c5ff);
+
+    this.drawNavigation(frame.route?.waypoints ?? []);
+    this.drawPerception(frame.perception);
+    this.updateTelemetry(frame.current, frame.perception, time);
+  }
+
+  private simulationInput(
+    timeMs: number,
+    deltaMs: number,
+  ): Parameters<typeof updateGuardSimulation>[1] {
+    return {
+      map: LAB_MAP,
+      tileSize: TILE_SIZE,
+      timeMs,
+      deltaMs,
+      target: { x: this.player.x, y: this.player.y },
+      speed: GUARD_SPEED,
+      visionRange: VISION_RANGE,
+      fieldOfViewRadians: FIELD_OF_VIEW,
+      algorithm: this.navigationAlgorithm,
+      patrolPoints: PATROL_POINTS,
+      captureDistancePx: CAPTURE_DISTANCE_PX,
+      searchDurationMs: SEARCH_DURATION_MS,
+      replanIntervalMs: REPLAN_INTERVAL_MS,
+    };
   }
 
   private drawGrid(): void {
@@ -204,106 +252,26 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    this.navigationGoal = worldToCell({ x: pointer.worldX, y: pointer.worldY }, TILE_SIZE);
-    this.renderNavigation();
-  }
-
-  private renderNavigation(): void {
-    const guardCell = worldToCell({ x: this.guard.x, y: this.guard.y }, TILE_SIZE);
-    const result = calculateRoute(
-      LAB_MAP,
-      guardCell,
-      this.navigationGoal,
-      this.navigationAlgorithm,
-    );
-    this.drawSearchResult(result);
-    this.guardWaypoints = result.status === "success"
-      ? result.path.map((point) => cellCenter(point, TILE_SIZE))
-      : [];
-    this.nextWaypoint = 0;
-
-    const targetPosition = cellCenter(this.navigationGoal, TILE_SIZE);
-    this.targetMarker.setPosition(targetPosition.x, targetPosition.y);
-    this.targetMarker.setStrokeStyle(3, result.status === "success" ? 0x73c991 : 0xe16969);
-
-    const cost = result.totalCost === null ? "-" : String(result.totalCost);
-    const algorithm = result.algorithm === "astar" ? "A*" : "BFS";
-    this.navigationSummary = [
-      `${algorithm} / ${STATUS_LABELS[result.status]}`,
-      `costo ${cost} | expandidos ${result.expandedNodes}`,
-      `frontera maxima ${result.maximumFrontier}`,
-    ];
-  }
-
-  private drawSearchResult(result: SearchResult): void {
+  private drawNavigation(waypoints: readonly Vector2[]): void {
     this.navigationGraphics.clear();
-    this.navigationGraphics.fillStyle(0x3b819c, 0.22);
-    for (const point of result.explored) {
-      this.navigationGraphics.fillRect(
-        point.x * TILE_SIZE + 3,
-        point.y * TILE_SIZE + 3,
-        TILE_SIZE - 6,
-        TILE_SIZE - 6,
-      );
-    }
-
-    const firstPoint = result.path[0];
-    if (!firstPoint) {
+    if (waypoints.length === 0) {
       return;
     }
 
-    const firstCenter = cellCenter(firstPoint, TILE_SIZE);
     this.navigationGraphics.lineStyle(4, 0x62d0e8, 0.9);
     this.navigationGraphics.beginPath();
-    this.navigationGraphics.moveTo(firstCenter.x, firstCenter.y);
-    for (const point of result.path.slice(1)) {
-      const center = cellCenter(point, TILE_SIZE);
-      this.navigationGraphics.lineTo(center.x, center.y);
+    this.navigationGraphics.moveTo(waypoints[0]?.x ?? 0, waypoints[0]?.y ?? 0);
+    for (const point of waypoints.slice(1)) {
+      this.navigationGraphics.lineTo(point.x, point.y);
     }
     this.navigationGraphics.strokePath();
   }
 
-  private updateGuardMovement(delta: number): void {
-    const previous = { x: this.guard.x, y: this.guard.y };
-    const movement = advanceAlongPath(
-      previous,
-      this.guardWaypoints,
-      this.nextWaypoint,
-      GUARD_SPEED * delta / 1000,
-    );
-    this.nextWaypoint = movement.nextWaypoint;
-    this.guard.setPosition(movement.position.x, movement.position.y);
-
-    if (movement.direction) {
-      this.guardFacing = movement.direction;
-    }
-  }
-
-  private updatePerception(time: number): void {
-    const observer = { x: this.guard.x, y: this.guard.y };
-    const target = { x: this.player.x, y: this.player.y };
-    const frame = updatePerceptionSimulation(this.perceptionState, {
-      map: LAB_MAP,
-      tileSize: TILE_SIZE,
-      observer,
-      facing: this.guardFacing,
-      target,
-      visionRange: VISION_RANGE,
-      fieldOfViewRadians: FIELD_OF_VIEW,
-      timeMs: time,
-    });
-    this.perceptionState = frame.state;
-
-    this.drawPerception(frame.vision);
-    this.updateTelemetry(time, frame.vision, frame.soundHeard);
-  }
-
-  private drawPerception(vision: VisionResult): void {
+  private drawPerception(perception: PerceptionFrame): void {
     this.perceptionGraphics.clear();
     const facingAngle = Math.atan2(this.guardFacing.y, this.guardFacing.x);
     const halfFieldOfView = FIELD_OF_VIEW / 2;
-    this.perceptionGraphics.fillStyle(vision.visible ? 0x73c991 : 0x6b8afd, 0.16);
+    this.perceptionGraphics.fillStyle(perception.vision.visible ? 0x73c991 : 0x6b8afd, 0.16);
     this.perceptionGraphics.beginPath();
     this.perceptionGraphics.moveTo(this.guard.x, this.guard.y);
     this.perceptionGraphics.arc(
@@ -316,34 +284,61 @@ export class GameScene extends Phaser.Scene {
     this.perceptionGraphics.closePath();
     this.perceptionGraphics.fillPath();
 
-    if (this.perceptionState.soundEvent) {
+    if (perception.state.soundEvent) {
       this.perceptionGraphics.lineStyle(2, 0xe5b454, 0.8);
       this.perceptionGraphics.strokeCircle(
-        this.perceptionState.soundEvent.position.x,
-        this.perceptionState.soundEvent.position.y,
-        this.perceptionState.soundEvent.radius,
+        perception.state.soundEvent.position.x,
+        perception.state.soundEvent.position.y,
+        perception.state.soundEvent.radius,
       );
     }
 
-    const lastKnown = this.perceptionState.memory.lastKnownPosition;
+    const lastKnown = perception.state.memory.lastKnownPosition;
     this.lastKnownMarker.setVisible(lastKnown !== null);
     if (lastKnown) {
       this.lastKnownMarker.setPosition(lastKnown.x, lastKnown.y);
     }
   }
 
-  private updateTelemetry(time: number, vision: VisionResult, soundHeard: boolean): void {
-    const age = timeSinceLastPerception(this.perceptionState.memory, time);
-    const memory = age === null
-      ? "memoria -"
-      : `memoria ${this.perceptionState.memory.source} ${(age / 1000).toFixed(1)}s`;
-    const sound = this.perceptionState.soundEvent
+  private updateTelemetry(
+    current: GuardState,
+    perception: PerceptionFrame,
+    time: number,
+  ): void {
+    const transition = this.guardSim.lastTransition;
+    const stateLine = `estado ${STATE_LABELS[current]}`;
+    const previous = transition
+      ? `anterior ${STATE_LABELS[transition.previousState]}`
+      : "anterior -";
+    const eventLine = transition
+      ? `${EVENT_LABELS[transition.event]} (${transition.cause})`
+      : "-";
+
+    const metrics = this.guardSim.lastSearch;
+    const search = metrics
+      ? `${metrics.algorithm === "astar" ? "A*" : "BFS"} / ${STATUS_LABELS[metrics.status]}` +
+        ` | costo ${metrics.totalCost ?? "-"} | expandidos ${metrics.expandedNodes}`
+      : "";
+    const searchFrontier = metrics
+      ? `frontera maxima ${metrics.maximumFrontier}`
+      : "";
+
+    const vision = VISION_LABELS[perception.vision.reason];
+    const soundHeard = perception.soundHeard;
+    const sound = perception.state.soundEvent
       ? (soundHeard ? "OIDO" : "FUERA DE RANGO")
       : "-";
 
+    const age = timeSinceLastPerception(perception.state.memory, time);
+    const memory = age === null
+      ? "memoria -"
+      : `memoria ${perception.state.memory.source} ${(age / 1000).toFixed(1)}s`;
+
     this.navigationHud.setText([
-      ...this.navigationSummary,
-      `vision ${VISION_LABELS[vision.reason]}`,
+      `${this.navigationAlgorithm === "astar" ? "A*" : "BFS"} / ${stateLine} | ${previous}`,
+      `evento ${eventLine}`,
+      ...(search ? [search, searchFrontier] : []),
+      `vision ${vision}`,
       `sonido ${sound}`,
       memory,
     ]);

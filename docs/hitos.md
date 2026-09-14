@@ -4,7 +4,7 @@ titulo: Hitos del laboratorio Guardia de Sigilo
 tipo: referencia
 audiencia: estudiante
 acceso: publico
-version: 3
+version: 4
 ---
 
 # Hitos del laboratorio
@@ -15,7 +15,7 @@ version: 3
 | H1. Repositorio preparado para agentes | Completado |
 | H2. Navegación | Completado |
 | H3. Percepción y movimiento | Completado |
-| H4. Máquina de estados | Pendiente |
+| H4. Máquina de estados | Completado |
 | H5. Comparación | Pendiente |
 | H6. Integración final | Pendiente |
 
