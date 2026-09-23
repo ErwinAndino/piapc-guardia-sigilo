@@ -13,7 +13,7 @@ Proyecto canónico de PIAPC 2026 para aplicar desarrollo agéntico e inteligenci
 
 ## Estado
 
-H0 a H3 implementados: escenario base, repositorio preparado para agentes, navegación BFS/A* y percepción con memoria. La máquina de estados se incorpora en H4.
+H0 a H3 implementados: escenario base, repositorio preparado para agentes, navegación BFS/A* y percepción con memoria. En H4 se incorpora la máquina de estados del guardia (patrullar, investigar, perseguir, buscar y regresar) con telemetría de transiciones.
 
 ## Ejecución
 
@@ -33,9 +33,10 @@ npm run validate
 En la escena:
 
 - WASD o flechas: mover al jugador.
-- Clic: elegir un destino para el guardia.
-- Espacio: alternar BFS y A*.
+- Espacio: alternar BFS y A* en las rutas del guardia.
 - Q: emitir un sonido desde el jugador.
+- P: pausar la simulación.
+- N: avanzar un paso mientras está en pausa.
 - R: reiniciar el escenario.
 
 ## Propósito
@@ -65,8 +66,10 @@ El proyecto no busca producir un videojuego comercial. Es un entorno de experime
 - [Registro de intervención](docs/plantillas/registro-intervencion.md)
 - [Evidencia de pruebas](docs/plantillas/evidencia-pruebas.md)
 - [H3: percepción y movimiento](docs/h3-percepcion-movimiento.md)
+- [H4: máquina de estados](docs/h4-maquina-estados.md)
 - [Intervención H3](docs/evidencias/h3-intervencion.md)
 - [Validación H3](docs/evidencias/h3-validacion.md)
+- [Validación H4](docs/evidencias/h4-validacion.md)
 
 ## Tecnología de referencia
 

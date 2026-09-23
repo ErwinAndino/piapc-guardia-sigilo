@@ -1,0 +1,282 @@
+import { cellCenter, cellEquals, worldToCell, type GridMap, type GridPoint } from "../../domain/model/grid";
+import type { Vector2 } from "../../domain/model/vector";
+import {
+  createInitialBehavior,
+  LOOK_DIRECTIONS,
+  updateGuardBehavior,
+  type GuardBehavior,
+} from "../../domain/behavior/guardBehavior";
+import {
+  createTelemetryLog,
+  recordTelemetry,
+  type TransitionLog,
+} from "../../domain/telemetry/telemetry";
+import {
+  initialPerceptionState,
+  updatePerceptionSimulation,
+  withSoundEvent,
+  type PerceptionSimulationState,
+} from "./perceptionSimulation";
+import { calculateRoute } from "./navigationDemo";
+import { advanceAlongPath } from "../../domain/navigation/pathFollower";
+import {
+  findPathAStar,
+  type SearchAlgorithm,
+} from "../../domain/navigation/search";
+import { PATROL_POINTS } from "./labLevel";
+import type { VisionResult } from "../../domain/perception/perception";
+
+export interface GuardConfig {
+  readonly guardSpeed: number;
+  readonly visionRange: number;
+  readonly fieldOfViewRadians: number;
+  readonly soundRadius: number;
+  readonly soundDurationMs: number;
+  readonly lookMsPerDirection: number;
+  readonly searchLimitMs: number;
+  readonly patrolPoints: readonly GridPoint[];
+}
+
+export const DEFAULT_GUARD_CONFIG: GuardConfig = {
+  guardSpeed: 115,
+  visionRange: 220,
+  fieldOfViewRadians: Math.PI / 2,
+  soundRadius: 190,
+  soundDurationMs: 800,
+  lookMsPerDirection: 500,
+  searchLimitMs: 3000,
+  patrolPoints: PATROL_POINTS,
+};
+
+export interface GuardSimulationState {
+  readonly behavior: GuardBehavior;
+  readonly perception: PerceptionSimulationState;
+  readonly waypoints: readonly Vector2[];
+  readonly nextWaypoint: number;
+  readonly goalCell: GridPoint | null;
+  readonly position: Vector2;
+  readonly facing: Vector2;
+  readonly telemetry: TransitionLog;
+  readonly algorithm: SearchAlgorithm;
+  readonly planFailed: boolean;
+}
+
+export interface GuardSimulationInput {
+  readonly map: GridMap;
+  readonly tileSize: number;
+  readonly playerPosition: Vector2;
+  readonly playerSoundRequested: boolean;
+  readonly timeMs: number;
+  readonly deltaMs: number;
+  readonly algorithm: SearchAlgorithm;
+}
+
+export interface GuardSimulationUpdate {
+  readonly state: GuardSimulationState;
+  readonly vision: VisionResult;
+  readonly soundHeard: boolean;
+}
+
+export function createInitialGuardState(
+  position: Vector2,
+  tileSize: number,
+  config: GuardConfig = DEFAULT_GUARD_CONFIG,
+): GuardSimulationState {
+  const behavior = createInitialBehavior(worldToCell(position, tileSize), config.patrolPoints);
+  const telemetry = recordTelemetry(createTelemetryLog(), {
+    timeMs: 0,
+    previous: null,
+    event: "reset",
+    next: behavior.name,
+    cause: "initial",
+  });
+
+  return {
+    behavior,
+    perception: initialPerceptionState(),
+    waypoints: [],
+    nextWaypoint: 0,
+    goalCell: null,
+    position: { ...position },
+    facing: { x: -1, y: 0 },
+    telemetry,
+    algorithm: "astar",
+    planFailed: false,
+  };
+}
+
+export function updateGuardSimulation(
+  previous: GuardSimulationState,
+  input: GuardSimulationInput,
+  config: GuardConfig = DEFAULT_GUARD_CONFIG,
+): GuardSimulationUpdate {
+  let telemetry = previous.telemetry;
+
+  let perception = previous.perception;
+  if (input.playerSoundRequested) {
+    perception = withSoundEvent(perception, {
+      position: { ...input.playerPosition },
+      radius: config.soundRadius,
+      emittedAtMs: input.timeMs,
+      durationMs: config.soundDurationMs,
+    });
+  }
+
+  const perceptionFrame = updatePerceptionSimulation(perception, {
+    map: input.map,
+    tileSize: input.tileSize,
+    observer: previous.position,
+    facing: previous.facing,
+    target: input.playerPosition,
+    visionRange: config.visionRange,
+    fieldOfViewRadians: config.fieldOfViewRadians,
+    timeMs: input.timeMs,
+  });
+  const memory = perceptionFrame.state.memory;
+  const vision = perceptionFrame.vision;
+  const soundHeard = perceptionFrame.soundHeard;
+
+  const guardCell = worldToCell(previous.position, input.tileSize);
+  const atDestination = previous.goalCell !== null
+    && cellEquals(guardCell, previous.goalCell);
+
+  const nearestPatrolIndex = previous.behavior.name === "returning"
+    ? nearestReachablePatrolIndex(input.map, guardCell, config.patrolPoints)
+    : null;
+
+  const decision = updateGuardBehavior(previous.behavior, {
+    timeMs: input.timeMs,
+    deltaMs: input.deltaMs,
+    atDestination,
+    planFailed: previous.planFailed,
+    vision,
+    soundHeard,
+    memory,
+    lookMsPerDirection: config.lookMsPerDirection,
+    searchLimitMs: config.searchLimitMs,
+    patrolCount: config.patrolPoints.length,
+    nearestPatrolIndex,
+  });
+
+  if (decision.transition) {
+    telemetry = recordTelemetry(telemetry, {
+      timeMs: input.timeMs,
+      previous: decision.transition.previous,
+      event: decision.transition.event,
+      next: decision.transition.next,
+      cause: decision.transition.cause,
+    });
+  }
+
+  const behavior = decision.behavior;
+  const intent = decision.intent;
+  let targetCell: GridPoint | null = null;
+  if (intent.kind === "patrol") {
+    targetCell = config.patrolPoints[intent.index] ?? null;
+  } else if (intent.kind === "last-known") {
+    targetCell = memory.lastKnownPosition
+      ? worldToCell(memory.lastKnownPosition, input.tileSize)
+      : null;
+  } else if (intent.kind === "nearest-patrol") {
+    targetCell = nearestPatrolIndex !== null
+      ? config.patrolPoints[nearestPatrolIndex] ?? null
+      : null;
+  } else {
+    targetCell = previous.goalCell;
+  }
+
+  const shouldMove = intent.kind !== "look"
+    && behavior.phase === "navigating"
+    && targetCell !== null;
+
+  let waypoints = previous.waypoints;
+  let nextWaypoint = previous.nextWaypoint;
+  let goalCell = previous.goalCell;
+  let planFailed = false;
+
+  if (shouldMove && targetCell !== null) {
+    const goalChanged = goalCell === null || !cellEquals(targetCell, goalCell);
+
+    if (goalChanged || waypoints.length === 0) {
+      const plan = calculateRoute(input.map, guardCell, targetCell, input.algorithm);
+      if (plan.status === "success") {
+        waypoints = plan.path.map((point) => cellCenter(point, input.tileSize));
+        nextWaypoint = 0;
+        goalCell = targetCell;
+      } else {
+        telemetry = recordTelemetry(telemetry, {
+          timeMs: input.timeMs,
+          previous: behavior.name,
+          event: "navigation-unreachable",
+          next: behavior.name,
+          cause: `navigation:${plan.status}`,
+        });
+        planFailed = true;
+      }
+    }
+  } else {
+    waypoints = [];
+    nextWaypoint = 0;
+  }
+
+  let position = previous.position;
+  let facing = previous.facing;
+
+  if (shouldMove && waypoints.length > 0) {
+    const movement = advanceAlongPath(
+      position,
+      waypoints,
+      nextWaypoint,
+      config.guardSpeed * input.deltaMs / 1000,
+    );
+    position = movement.position;
+    nextWaypoint = movement.nextWaypoint;
+    if (movement.direction) {
+      facing = movement.direction;
+    }
+  }
+
+  if (behavior.phase === "looking") {
+    facing = LOOK_DIRECTIONS[behavior.lookStep] ?? facing;
+  }
+
+  return {
+    state: {
+      behavior,
+      perception: perceptionFrame.state,
+      waypoints,
+      nextWaypoint,
+      goalCell,
+      position,
+      facing,
+      telemetry,
+      algorithm: input.algorithm,
+      planFailed,
+    },
+    vision,
+    soundHeard,
+  };
+}
+
+function nearestReachablePatrolIndex(
+  map: GridMap,
+  from: GridPoint,
+  patrolPoints: readonly GridPoint[],
+): number | null {
+  let bestIndex: number | null = null;
+  let bestCost = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < patrolPoints.length; index += 1) {
+    const point = patrolPoints[index];
+    if (!point) {
+      continue;
+    }
+    const result = findPathAStar(map, from, point);
+    if (result.status === "success" && result.totalCost !== null && result.totalCost < bestCost) {
+      bestCost = result.totalCost;
+      bestIndex = index;
+    }
+  }
+
+  return bestIndex;
+}

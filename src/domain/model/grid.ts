@@ -33,6 +33,10 @@ export function createGridMap(
   return { width, height, blocked };
 }
 
+export function cellEquals(left: GridPoint, right: GridPoint): boolean {
+  return left.x === right.x && left.y === right.y;
+}
+
 export function isInside(
   map: Pick<GridMap, "width" | "height">,
   point: GridPoint,
