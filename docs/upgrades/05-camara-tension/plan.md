@@ -9,8 +9,9 @@ version: 2
 
 # Plan — Camara dinamica de tension
 
-- Spec: `./spec.md` (estado: [pendiente / revisada]).
-- Estado del plan: [pendiente de aprobacion / aprobado].
+- Spec: `./spec.md` (estado: revisada y aprobada el 2026-10-06).
+- Estado del plan: aprobado y ejecutado el 2026-10-06; pendiente de
+  decision humana (reproduccion visual) y commit.
 
 ## Supuestos de diseno
 

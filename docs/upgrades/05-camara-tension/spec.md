@@ -4,14 +4,14 @@ titulo: Spec - Camara dinamica de tension
 tipo: especificacion
 audiencia: estudiante
 acceso: publico
-version: 1
+version: 2
 ---
 
 # Spec — Camara dinamica de tension
 
 - Upgrade de catalogo: 05.
 - Aporte del catalogo: Encuadre util durante un momento de riesgo.
-- Estado: borrador pendiente de revision humana.
+- Estado: revisada y aprobada el 2026-10-06.
 
 ## Problema
 

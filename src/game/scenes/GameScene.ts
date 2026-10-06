@@ -48,6 +48,13 @@ import {
   initialAlertImpactState,
   type AlertImpactState,
 } from "../presentation/alertImpact";
+import {
+  ZOOM_BASE,
+  ZOOM_SMOOTH_FACTOR,
+  advanceZoom,
+  cameraFocus,
+  zoomTargetFor,
+} from "../presentation/cameraTension";
 
 const PLAYER_SPEED = 190;
 const GUARD_RADIUS = 11;
@@ -57,6 +64,10 @@ const FLASH_RING_END_RADIUS = 28;
 const FLASH_RING_START_ALPHA = 0.9;
 const VISION_RANGE = DEFAULT_GUARD_CONFIG.visionRange;
 const FIELD_OF_VIEW = DEFAULT_GUARD_CONFIG.fieldOfViewRadians;
+const MAP_CENTER = {
+  x: (GRID_WIDTH * TILE_SIZE) / 2,
+  y: (GRID_HEIGHT * TILE_SIZE) / 2,
+};
 const VISION_LABELS: Readonly<Record<VisionReason, string>> = {
   visible: "VISIBLE",
   "out-of-range": "FUERA DE RANGO",
@@ -101,6 +112,7 @@ export class GameScene extends Phaser.Scene {
     distance: 0,
   };
   private lastSoundHeard = false;
+  private tensionZoom = ZOOM_BASE;
 
   public constructor() {
     super("GameScene");
@@ -116,6 +128,9 @@ export class GameScene extends Phaser.Scene {
     this.impactElapsedMs = 0;
     this.impactActive = false;
     this.cameras.main.setBackgroundColor("#10161c");
+    this.tensionZoom = ZOOM_BASE;
+    this.cameras.main.setZoom(ZOOM_BASE);
+    this.cameras.main.centerOn(MAP_CENTER.x, MAP_CENTER.y);
     this.drawGrid();
 
     const walls = this.physics.add.staticGroup();
@@ -282,6 +297,16 @@ export class GameScene extends Phaser.Scene {
         this.impactActive = false;
       }
     }
+
+    this.applyTensionZoom();
+  }
+
+  private applyTensionZoom(): void {
+    const target = zoomTargetFor(this.guardState.behavior.name);
+    this.tensionZoom = advanceZoom(this.tensionZoom, target, ZOOM_SMOOTH_FACTOR);
+    const focus = cameraFocus(this.tensionZoom, this.player, MAP_CENTER);
+    this.cameras.main.centerOn(focus.x, focus.y);
+    this.cameras.main.setZoom(this.tensionZoom);
   }
 
   private createImpactParticles(): Phaser.GameObjects.Particles.ParticleEmitter {
