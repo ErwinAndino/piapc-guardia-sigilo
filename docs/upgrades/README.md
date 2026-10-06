@@ -34,12 +34,24 @@ Un prompt no reemplaza la spec. Ningun codigo avanza sin spec revisada y plan ap
 - Validacion de referencia: `npm run validate` → exit 0 (typecheck, 10 archivos / 69 pruebas, build `dist/`).
   Advertencia conocida del build: chunk principal 1505.79 kB supera el limite de 500 kB de Vite (preexistente, fuera de alcance de los upgrades).
 
+## Estado de preparacion
+
+Commits posteriores al punto inicial, autorizados por el humano:
+
+- `eb16205` — estructura de los 10 upgrades, plantillas y punto inicial (solo `docs/`).
+- `ecaa013` — upgrade 02 en curso: estilo del cono de vision por estado
+  (`Prompts/Req.md`, `src/game/scenes/GameScene.ts`, `src/game/presentation/coneStyle.ts`,
+  `tests/presentation/coneStyle.test.ts`).
+
+Validacion posterior: `npm run validate` → exit 0 (10 archivos / 69 pruebas, build OK).
+El codigo del upgrade 01 no tiene commits propios: proviene del baseline `f80466c` (ver trazabilidad en su spec).
+
 ## Catalogo
 
 | N. | Upgrade | Carpeta | Aporte | Estado |
 |---:|---|---|---|---|
-| 01 | Patrulla con pausas y mirada direccional | `01-patrulla-pausas-mirada/` | Anticipacion visual y ritmo del recorrido | spec pendiente |
-| 02 | Cono de vision visible y reactivo | `02-cono-vision-reactivo/` | Claridad de alcance y amenaza | spec en borrador (codigo preexistente) |
+| 01 | Patrulla con pausas y mirada direccional | `01-patrulla-pausas-mirada/` | Anticipacion visual y ritmo del recorrido | documentado; pendiente decision humana y C7 visual |
+| 02 | Cono de vision visible y reactivo | `02-cono-vision-reactivo/` | Claridad de alcance y amenaza | documentado (`ecaa013`); pendiente decision humana y C7 visual |
 | 03 | Animaciones por estado y transicion | `03-animaciones-estado-transicion/` | Representacion coherente de la conducta | spec pendiente |
 | 04 | Impacto visual extremo de alerta | `04-alerta-visual-extrema/` | Shake, flash, zoom, particulas o equivalente | spec pendiente |
 | 05 | Camara dinamica de tension | `05-camara-tension/` | Encuadre util durante un momento de riesgo | spec pendiente |

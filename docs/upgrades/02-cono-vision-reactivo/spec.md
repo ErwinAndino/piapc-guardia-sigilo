@@ -11,12 +11,12 @@ version: 1
 
 - Upgrade de catalogo: 02.
 - Aporte del catalogo: Claridad de alcance y amenaza.
-- Estado: borrador pendiente de revision humana.
-- Nota de trazabilidad: existe codigo sin spec previa
-  (`src/game/presentation/coneStyle.ts`, `tests/presentation/coneStyle.test.ts`,
-  cambio en `src/game/scenes/GameScene.ts`). Este documento lo cubre a
-  posteriori; su aceptación depende de la revisión humana y de la validación
-  registrada en `evidencia.md`.
+- Estado: revisada y aprobada por el humano el 2026-10-06.
+- Nota de trazabilidad: el codigo se implemento antes que este documento
+  (`ecaa013`: `src/game/presentation/coneStyle.ts`,
+  `tests/presentation/coneStyle.test.ts`, cambio en `src/game/scenes/GameScene.ts`).
+  El documento lo cubre a posteriori; la aprobacion humana y la evidencia
+  registrada en `evidencia.md` son el respaldo de aceptacion.
 
 ## Problema
 
