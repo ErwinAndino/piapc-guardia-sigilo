@@ -19,6 +19,7 @@ export interface GuardBehavior {
   readonly lookElapsedMs: number;
   readonly searchElapsedMs: number;
   readonly patrolIndex: number;
+  readonly sightLostElapsedMs: number;
 }
 
 export const STATE_LABELS: Readonly<Record<GuardStateName, string>> = {
@@ -67,6 +68,7 @@ export interface GuardFrame {
   readonly memory: PerceptionMemory;
   readonly lookMsPerDirection: number;
   readonly searchLimitMs: number;
+  readonly sightLostToleranceMs: number;
   readonly patrolCount: number;
   readonly nearestPatrolIndex: number | null;
 }
@@ -83,6 +85,7 @@ export function createInitialBehavior(
     lookElapsedMs: 0,
     searchElapsedMs: 0,
     patrolIndex: startIndex >= 0 ? startIndex : 0,
+    sightLostElapsedMs: 0,
   };
 }
 
@@ -106,6 +109,7 @@ export function updateGuardBehavior(
     patrolIndex: previous.patrolIndex,
     lookElapsedMs: lookElapsed,
     searchElapsedMs: searchElapsed,
+    sightLostElapsedMs: previous.sightLostElapsedMs,
   };
 
   if (frame.vision.visible) {
@@ -118,6 +122,7 @@ export function updateGuardBehavior(
           lookStep: 0,
           lookElapsedMs: 0,
           searchElapsedMs: 0,
+          sightLostElapsedMs: 0,
         },
         intent: { kind: "last-known" },
         transition: {
@@ -137,6 +142,7 @@ export function updateGuardBehavior(
         lookStep: 0,
         lookElapsedMs: 0,
         searchElapsedMs: 0,
+        sightLostElapsedMs: 0,
       },
       intent: { kind: "last-known" },
       transition: null,
@@ -152,6 +158,7 @@ export function updateGuardBehavior(
         lookStep: 0,
         lookElapsedMs: 0,
         searchElapsedMs: 0,
+        sightLostElapsedMs: 0,
       },
       intent: { kind: "last-known" },
       transition: previous.name === "investigating"
@@ -176,6 +183,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
           },
           intent: { kind: "nearest-patrol" },
           transition: {
@@ -187,6 +195,21 @@ export function updateGuardBehavior(
         };
       }
 
+      const sightLost = previous.sightLostElapsedMs + frame.deltaMs;
+      if (sightLost < frame.sightLostToleranceMs) {
+        return {
+          behavior: {
+            ...base,
+            name: "pursuing",
+            phase: previous.phase,
+            lookStep: previous.lookStep,
+            sightLostElapsedMs: sightLost,
+          },
+          intent: { kind: "last-known" },
+          transition: null,
+        };
+      }
+
       return {
         behavior: {
           ...base,
@@ -195,6 +218,7 @@ export function updateGuardBehavior(
           lookStep: 0,
           lookElapsedMs: 0,
           searchElapsedMs: 0,
+          sightLostElapsedMs: 0,
         },
         intent: { kind: "last-known" },
         transition: {
@@ -216,6 +240,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
           },
           intent: { kind: "look" },
           transition: {
@@ -236,6 +261,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
           },
           intent: { kind: "nearest-patrol" },
           transition: {
@@ -268,6 +294,7 @@ export function updateGuardBehavior(
               phase: "navigating",
               lookStep: 0,
               lookElapsedMs: 0,
+              sightLostElapsedMs: 0,
             },
             intent: { kind: "nearest-patrol" },
             transition: {
@@ -295,6 +322,7 @@ export function updateGuardBehavior(
             phase: "navigating",
             lookStep: 0,
             lookElapsedMs: 0,
+            sightLostElapsedMs: 0,
           },
           intent: { kind: "nearest-patrol" },
           transition: {
@@ -329,6 +357,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
             patrolIndex: nextPatrol,
           },
           intent: { kind: "patrol", index: nextPatrol },
@@ -355,6 +384,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
             patrolIndex: recovered,
           },
           intent: { kind: "patrol", index: recovered },
@@ -400,6 +430,7 @@ export function updateGuardBehavior(
             lookStep: 0,
             lookElapsedMs: 0,
             searchElapsedMs: 0,
+            sightLostElapsedMs: 0,
             patrolIndex: nextPatrol,
           },
           intent: { kind: "patrol", index: nextPatrol },
@@ -430,6 +461,8 @@ function validateFrame(frame: GuardFrame): void {
     || frame.lookMsPerDirection <= 0
     || !Number.isFinite(frame.searchLimitMs)
     || frame.searchLimitMs < 0
+    || !Number.isFinite(frame.sightLostToleranceMs)
+    || frame.sightLostToleranceMs <= 0
   ) {
     throw new Error("Behavior timing configuration is invalid.");
   }

@@ -126,4 +126,57 @@ describe("guard simulation", () => {
       "return-to-patrol",
     ])).toBe(true);
   });
+
+  it("keeps pursuing a statically visible player without flapping", () => {
+    const config = testConfig();
+    const map = openMap();
+    let state = createInitialGuardState(cellCenter({ x: 4, y: 6 }, TILE), TILE, config);
+    let time = 0;
+
+    for (let index = 0; index < 120; index += 1) {
+      const update = tick(state, { x: 2, y: 6 }, time, config, map);
+      state = update.state;
+      expect(state.behavior.name).toBe("pursuing");
+      time += 16;
+    }
+
+    const events = latestTransitions(state.telemetry, 200).map((entry) => entry.event);
+    expect(events).not.toContain("lost-sight");
+  });
+
+  it("does not backtrack while chasing a moving player", () => {
+    const config = testConfig();
+    const map = openMap();
+    let state = createInitialGuardState(cellCenter({ x: 4, y: 6 }, TILE), TILE, config);
+    let time = 0;
+
+    const playerCells: GridPoint[] = [
+      { x: 2, y: 6 },
+      { x: 1, y: 6 },
+      { x: 0, y: 6 },
+    ];
+
+    let previousX = state.position.x;
+    let advanced = false;
+    for (let index = 0; index < 60; index += 1) {
+      const playerCellIndex = Math.min(Math.floor(index / 8), playerCells.length - 1);
+      const playerCell = playerCells[playerCellIndex];
+      if (!playerCell) {
+        throw new Error("Player cell fixture missing.");
+      }
+      const update = tick(state, playerCell, time, config, map);
+      state = update.state;
+      time += 16;
+
+      expect(state.position.x).toBeLessThanOrEqual(previousX);
+      if (state.position.x < previousX) {
+        advanced = true;
+      }
+      previousX = state.position.x;
+    }
+
+    expect(state.behavior.name).toBe("pursuing");
+    expect(advanced).toBe(true);
+    expect(state.position.x).toBeLessThan(cellCenter({ x: 1, y: 6 }, TILE).x);
+  });
 });

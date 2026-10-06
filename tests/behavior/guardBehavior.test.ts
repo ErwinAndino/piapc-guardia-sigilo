@@ -27,6 +27,7 @@ function patrolling(patrolIndex = 0): GuardBehavior {
     lookElapsedMs: 0,
     searchElapsedMs: 0,
     patrolIndex,
+    sightLostElapsedMs: 0,
   };
 }
 
@@ -41,6 +42,7 @@ function frame(overrides: Partial<GuardFrame> = {}): GuardFrame {
     memory: MEMORY,
     lookMsPerDirection: 20,
     searchLimitMs: 400,
+    sightLostToleranceMs: 250,
     patrolCount: 2,
     nearestPatrolIndex: 0,
     ...overrides,
@@ -72,6 +74,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 0,
       searchElapsedMs: 0,
       patrolIndex: 1,
+      sightLostElapsedMs: 0,
     };
 
     const partial = updateGuardBehavior(looking, frame({ deltaMs: 20 }));
@@ -99,6 +102,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 40,
       searchElapsedMs: 0,
       patrolIndex: 1,
+      sightLostElapsedMs: 0,
     };
     const decision = updateGuardBehavior(looking, frame({
       vision: { visible: true, reason: "visible", distance: 30 },
@@ -139,6 +143,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 0,
       searchElapsedMs: 0,
       patrolIndex: 0,
+      sightLostElapsedMs: 0,
     };
     const decision = updateGuardBehavior(pursuing, frame({
       vision: { visible: true, reason: "visible", distance: 20 },
@@ -157,8 +162,9 @@ describe("guard behavior", () => {
       lookElapsedMs: 0,
       searchElapsedMs: 0,
       patrolIndex: 0,
+      sightLostElapsedMs: 0,
     };
-    const decision = updateGuardBehavior(pursuing, frame());
+    const decision = updateGuardBehavior(pursuing, frame({ deltaMs: 250 }));
 
     expect(decision.transition).toEqual({
       previous: "pursuing",
@@ -170,6 +176,24 @@ describe("guard behavior", () => {
     expect(decision.intent).toEqual({ kind: "last-known" });
   });
 
+  it("stays pursuing briefly after sight is lost", () => {
+    const pursuing: GuardBehavior = {
+      name: "pursuing",
+      phase: "navigating",
+      lookStep: 0,
+      lookElapsedMs: 0,
+      searchElapsedMs: 0,
+      patrolIndex: 0,
+      sightLostElapsedMs: 0,
+    };
+    const decision = updateGuardBehavior(pursuing, frame({ deltaMs: 100 }));
+
+    expect(decision.transition).toBeNull();
+    expect(decision.behavior.name).toBe("pursuing");
+    expect(decision.behavior.sightLostElapsedMs).toBe(100);
+    expect(decision.intent).toEqual({ kind: "last-known" });
+  });
+
   it("starts looking when the investigation point is reached", () => {
     const investigating: GuardBehavior = {
       name: "investigating",
@@ -178,6 +202,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 0,
       searchElapsedMs: 0,
       patrolIndex: 0,
+      sightLostElapsedMs: 0,
     };
     const decision = updateGuardBehavior(investigating, frame({ atDestination: true }));
 
@@ -199,6 +224,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 80,
       searchElapsedMs: 400,
       patrolIndex: 0,
+      sightLostElapsedMs: 0,
     };
     const decision = updateGuardBehavior(searching, frame({ deltaMs: 0 }));
 
@@ -219,6 +245,7 @@ describe("guard behavior", () => {
       lookElapsedMs: 0,
       searchElapsedMs: 0,
       patrolIndex: 0,
+      sightLostElapsedMs: 0,
     };
     const decision = updateGuardBehavior(returning, frame({
       atDestination: true,

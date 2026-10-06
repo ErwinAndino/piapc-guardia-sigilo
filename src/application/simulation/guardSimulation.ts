@@ -34,6 +34,7 @@ export interface GuardConfig {
   readonly soundDurationMs: number;
   readonly lookMsPerDirection: number;
   readonly searchLimitMs: number;
+  readonly sightLostToleranceMs: number;
   readonly patrolPoints: readonly GridPoint[];
 }
 
@@ -45,6 +46,7 @@ export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   soundDurationMs: 800,
   lookMsPerDirection: 500,
   searchLimitMs: 3000,
+  sightLostToleranceMs: 250,
   patrolPoints: PATROL_POINTS,
 };
 
@@ -122,11 +124,29 @@ export function updateGuardSimulation(
     });
   }
 
+  let position = previous.position;
+  let facing = previous.facing;
+  let nextWaypoint = previous.nextWaypoint;
+
+  if (previous.behavior.phase === "navigating" && previous.waypoints.length > 0) {
+    const movement = advanceAlongPath(
+      position,
+      previous.waypoints,
+      previous.nextWaypoint,
+      config.guardSpeed * input.deltaMs / 1000,
+    );
+    position = movement.position;
+    nextWaypoint = movement.nextWaypoint;
+    if (movement.direction) {
+      facing = movement.direction;
+    }
+  }
+
   const perceptionFrame = updatePerceptionSimulation(perception, {
     map: input.map,
     tileSize: input.tileSize,
-    observer: previous.position,
-    facing: previous.facing,
+    observer: position,
+    facing,
     target: input.playerPosition,
     visionRange: config.visionRange,
     fieldOfViewRadians: config.fieldOfViewRadians,
@@ -136,7 +156,7 @@ export function updateGuardSimulation(
   const vision = perceptionFrame.vision;
   const soundHeard = perceptionFrame.soundHeard;
 
-  const guardCell = worldToCell(previous.position, input.tileSize);
+  const guardCell = worldToCell(position, input.tileSize);
   const atDestination = previous.goalCell !== null
     && cellEquals(guardCell, previous.goalCell);
 
@@ -154,6 +174,7 @@ export function updateGuardSimulation(
     memory,
     lookMsPerDirection: config.lookMsPerDirection,
     searchLimitMs: config.searchLimitMs,
+    sightLostToleranceMs: config.sightLostToleranceMs,
     patrolCount: config.patrolPoints.length,
     nearestPatrolIndex,
   });
@@ -190,17 +211,17 @@ export function updateGuardSimulation(
     && targetCell !== null;
 
   let waypoints = previous.waypoints;
-  let nextWaypoint = previous.nextWaypoint;
   let goalCell = previous.goalCell;
   let planFailed = false;
 
   if (shouldMove && targetCell !== null) {
     const goalChanged = goalCell === null || !cellEquals(targetCell, goalCell);
 
-    if (goalChanged || waypoints.length === 0) {
+    if (goalChanged || previous.waypoints.length === 0) {
       const plan = calculateRoute(input.map, guardCell, targetCell, input.algorithm);
       if (plan.status === "success") {
-        waypoints = plan.path.map((point) => cellCenter(point, input.tileSize));
+        const cells = plan.path.map((point) => cellCenter(point, input.tileSize));
+        waypoints = [{ ...position }, ...cells.slice(1)];
         nextWaypoint = 0;
         goalCell = targetCell;
       } else {
@@ -211,29 +232,14 @@ export function updateGuardSimulation(
           next: behavior.name,
           cause: `navigation:${plan.status}`,
         });
+        waypoints = [];
+        nextWaypoint = 0;
         planFailed = true;
       }
     }
   } else {
     waypoints = [];
     nextWaypoint = 0;
-  }
-
-  let position = previous.position;
-  let facing = previous.facing;
-
-  if (shouldMove && waypoints.length > 0) {
-    const movement = advanceAlongPath(
-      position,
-      waypoints,
-      nextWaypoint,
-      config.guardSpeed * input.deltaMs / 1000,
-    );
-    position = movement.position;
-    nextWaypoint = movement.nextWaypoint;
-    if (movement.direction) {
-      facing = movement.direction;
-    }
   }
 
   if (behavior.phase === "looking") {
