@@ -23,6 +23,7 @@ import {
   type PerceptionSource,
 } from "../../domain/perception/memory";
 import type { VisionReason, VisionResult } from "../../domain/perception/perception";
+import { coneStyleFor } from "../presentation/coneStyle";
 
 const PLAYER_SPEED = 190;
 const VISION_RANGE = DEFAULT_GUARD_CONFIG.visionRange;
@@ -257,7 +258,8 @@ export class GameScene extends Phaser.Scene {
     const facing = this.guardState.facing;
     const facingAngle = Math.atan2(facing.y, facing.x);
     const halfFieldOfView = FIELD_OF_VIEW / 2;
-    this.perceptionGraphics.fillStyle(this.lastVision.visible ? 0x73c991 : 0x6b8afd, 0.16);
+    const coneStyle = coneStyleFor(this.guardState.behavior.name);
+    this.perceptionGraphics.fillStyle(coneStyle.fill, coneStyle.alpha);
     this.perceptionGraphics.beginPath();
     this.perceptionGraphics.moveTo(guardPosition.x, guardPosition.y);
     this.perceptionGraphics.arc(
