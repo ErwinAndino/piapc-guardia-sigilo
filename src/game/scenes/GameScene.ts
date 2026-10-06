@@ -24,8 +24,18 @@ import {
 } from "../../domain/perception/memory";
 import type { VisionReason, VisionResult } from "../../domain/perception/perception";
 import { coneStyleFor } from "../presentation/coneStyle";
+import {
+  flashProgress,
+  guardBodyStyleFor,
+  latestStateTransition,
+} from "../presentation/guardStyle";
 
 const PLAYER_SPEED = 190;
+const GUARD_RADIUS = 11;
+const FLASH_DURATION_MS = 400;
+const FLASH_RING_START_RADIUS = GUARD_RADIUS;
+const FLASH_RING_END_RADIUS = 28;
+const FLASH_RING_START_ALPHA = 0.9;
 const VISION_RANGE = DEFAULT_GUARD_CONFIG.visionRange;
 const FIELD_OF_VIEW = DEFAULT_GUARD_CONFIG.fieldOfViewRadians;
 const VISION_LABELS: Readonly<Record<VisionReason, string>> = {
@@ -53,9 +63,12 @@ export class GameScene extends Phaser.Scene {
   private patrolGraphics!: Phaser.GameObjects.Graphics;
   private navigationGraphics!: Phaser.GameObjects.Graphics;
   private perceptionGraphics!: Phaser.GameObjects.Graphics;
+  private transitionGraphics!: Phaser.GameObjects.Graphics;
   private lastKnownMarker!: Phaser.GameObjects.Arc;
   private hud!: Phaser.GameObjects.Text;
   private guardState!: GuardSimulationState;
+  private lastTransition: TelemetryEntry | null = null;
+  private flashElapsedMs = 0;
   private algorithm: SearchAlgorithm = "astar";
   private paused = false;
   private lastVision: VisionResult = {
@@ -73,6 +86,8 @@ export class GameScene extends Phaser.Scene {
     this.algorithm = "astar";
     this.paused = false;
     this.guardState = createInitialGuardState(cellCenter(GUARD_START, TILE_SIZE), TILE_SIZE);
+    this.lastTransition = latestStateTransition(this.guardState.telemetry);
+    this.flashElapsedMs = 0;
     this.cameras.main.setBackgroundColor("#10161c");
     this.drawGrid();
 
@@ -116,10 +131,11 @@ export class GameScene extends Phaser.Scene {
     this.perceptionGraphics = this.add.graphics().setDepth(1);
     this.navigationGraphics = this.add.graphics().setDepth(2);
     this.patrolGraphics = this.add.graphics().setDepth(3);
+    this.transitionGraphics = this.add.graphics().setDepth(5);
 
     const guardPosition = cellCenter(GUARD_START, TILE_SIZE);
     this.guard = this.add
-      .circle(guardPosition.x, guardPosition.y, 11, 0x6b8afd)
+      .circle(guardPosition.x, guardPosition.y, GUARD_RADIUS, 0x6b8afd)
       .setStrokeStyle(2, 0xb9c5ff)
       .setDepth(4);
     this.lastKnownMarker = this.add
@@ -202,6 +218,14 @@ export class GameScene extends Phaser.Scene {
     this.guard.setPosition(update.state.position.x, update.state.position.y);
     this.lastVision = update.vision;
     this.lastSoundHeard = update.soundHeard;
+
+    const transition = latestStateTransition(this.guardState.telemetry);
+    if (transition !== null && transition !== this.lastTransition) {
+      this.lastTransition = transition;
+      this.flashElapsedMs = 0;
+    } else if (this.lastTransition !== null) {
+      this.flashElapsedMs += delta;
+    }
   }
 
   private drawGrid(): void {
@@ -233,7 +257,30 @@ export class GameScene extends Phaser.Scene {
   private render(): void {
     this.drawRoute();
     this.drawPerception();
+    this.drawGuardBody();
     this.renderHud();
+  }
+
+  private drawGuardBody(): void {
+    const style = guardBodyStyleFor(this.guardState.behavior.name);
+    this.guard.setFillStyle(style.fill);
+    this.guard.setStrokeStyle(2, style.stroke);
+
+    this.transitionGraphics.clear();
+    if (this.lastTransition === null) {
+      return;
+    }
+    const progress = flashProgress(this.flashElapsedMs, FLASH_DURATION_MS);
+    if (progress >= 1) {
+      return;
+    }
+    const targetStyle = guardBodyStyleFor(this.lastTransition.next);
+    const radius =
+      FLASH_RING_START_RADIUS +
+      (FLASH_RING_END_RADIUS - FLASH_RING_START_RADIUS) * progress;
+    const alpha = FLASH_RING_START_ALPHA * (1 - progress);
+    this.transitionGraphics.lineStyle(3, targetStyle.stroke, alpha);
+    this.transitionGraphics.strokeCircle(this.guard.x, this.guard.y, radius);
   }
 
   private drawRoute(): void {
