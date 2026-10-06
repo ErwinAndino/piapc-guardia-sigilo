@@ -29,6 +29,25 @@ import {
   guardBodyStyleFor,
   latestStateTransition,
 } from "../presentation/guardStyle";
+import {
+  IMPACT_FLASH_BLUE,
+  IMPACT_FLASH_DURATION_MS,
+  IMPACT_FLASH_GREEN,
+  IMPACT_FLASH_RED,
+  IMPACT_PARTICLE_COUNT,
+  IMPACT_PARTICLE_DURATION_MS,
+  IMPACT_PARTICLE_SPEED_MAX,
+  IMPACT_PARTICLE_SPEED_MIN,
+  IMPACT_RING_COLOR,
+  IMPACT_RING_DURATION_MS,
+  IMPACT_SHAKE_DURATION_MS,
+  IMPACT_SHAKE_INTENSITY,
+  evaluateAlertImpact,
+  impactRemainingMs,
+  impactRingStyle,
+  initialAlertImpactState,
+  type AlertImpactState,
+} from "../presentation/alertImpact";
 
 const PLAYER_SPEED = 190;
 const GUARD_RADIUS = 11;
@@ -65,10 +84,15 @@ export class GameScene extends Phaser.Scene {
   private perceptionGraphics!: Phaser.GameObjects.Graphics;
   private transitionGraphics!: Phaser.GameObjects.Graphics;
   private lastKnownMarker!: Phaser.GameObjects.Arc;
+  private hudCamera!: Phaser.Cameras.Scene2D.Camera;
   private hud!: Phaser.GameObjects.Text;
   private guardState!: GuardSimulationState;
   private lastTransition: TelemetryEntry | null = null;
   private flashElapsedMs = 0;
+  private impactParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private alertImpactState: AlertImpactState = initialAlertImpactState;
+  private impactElapsedMs = 0;
+  private impactActive = false;
   private algorithm: SearchAlgorithm = "astar";
   private paused = false;
   private lastVision: VisionResult = {
@@ -88,6 +112,9 @@ export class GameScene extends Phaser.Scene {
     this.guardState = createInitialGuardState(cellCenter(GUARD_START, TILE_SIZE), TILE_SIZE);
     this.lastTransition = latestStateTransition(this.guardState.telemetry);
     this.flashElapsedMs = 0;
+    this.alertImpactState = initialAlertImpactState;
+    this.impactElapsedMs = 0;
+    this.impactActive = false;
     this.cameras.main.setBackgroundColor("#10161c");
     this.drawGrid();
 
@@ -144,7 +171,9 @@ export class GameScene extends Phaser.Scene {
       .setDepth(5)
       .setVisible(false);
 
-    this.add
+    this.impactParticles = this.createImpactParticles();
+
+    const hudTitle = this.add
       .text(16, 14, "H4 / MAQUINA DE ESTADOS", {
         color: "#9eb4c2",
         fontFamily: "monospace",
@@ -165,6 +194,13 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10);
 
     this.drawPatrolMarkers();
+
+    const hudItems: Phaser.GameObjects.GameObject[] = [hudTitle, this.hud];
+    this.hudCamera = this.cameras.add();
+    this.cameras.main.ignore(hudItems);
+    this.hudCamera.ignore(
+      this.children.list.filter((child) => !hudItems.includes(child)),
+    );
   }
 
   public update(time: number, delta: number): void {
@@ -178,7 +214,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) {
-      this.paused = !this.paused;
+      this.setPaused(!this.paused);
     }
 
     const stepRequested = Phaser.Input.Keyboard.JustDown(this.stepKey);
@@ -226,6 +262,95 @@ export class GameScene extends Phaser.Scene {
     } else if (this.lastTransition !== null) {
       this.flashElapsedMs += delta;
     }
+
+    if (!this.paused) {
+      const impact = evaluateAlertImpact(
+        this.alertImpactState,
+        this.guardState.telemetry,
+        time,
+      );
+      this.alertImpactState = impact.state;
+      if (impact.burst) {
+        this.startImpact();
+      }
+    }
+
+    if (this.impactActive && !this.paused) {
+      this.impactElapsedMs += delta;
+      if (this.impactElapsedMs >= IMPACT_RING_DURATION_MS) {
+        this.impactElapsedMs = IMPACT_RING_DURATION_MS;
+        this.impactActive = false;
+      }
+    }
+  }
+
+  private createImpactParticles(): Phaser.GameObjects.Particles.ParticleEmitter {
+    const key = "alert-spark";
+    if (!this.textures.exists(key)) {
+      const spark = this.add.graphics();
+      spark.fillStyle(0xffffff, 1);
+      spark.fillCircle(4, 4, 4);
+      spark.generateTexture(key, 8, 8);
+      spark.destroy();
+    }
+    return this.add
+      .particles(0, 0, key, {
+        emitting: false,
+        lifespan: IMPACT_PARTICLE_DURATION_MS,
+        speed: {
+          min: IMPACT_PARTICLE_SPEED_MIN,
+          max: IMPACT_PARTICLE_SPEED_MAX,
+        },
+        angle: { min: 0, max: 360 },
+        scale: { start: 1, end: 0 },
+        alpha: { start: 1, end: 0 },
+        tint: IMPACT_RING_COLOR,
+        blendMode: "ADD",
+      })
+      .setDepth(6);
+  }
+
+  private startImpact(): void {
+    this.impactActive = true;
+    this.impactElapsedMs = 0;
+    this.cameras.main.shake(IMPACT_SHAKE_DURATION_MS, IMPACT_SHAKE_INTENSITY, true);
+    this.cameras.main.flash(
+      IMPACT_FLASH_DURATION_MS,
+      IMPACT_FLASH_RED,
+      IMPACT_FLASH_GREEN,
+      IMPACT_FLASH_BLUE,
+      true,
+    );
+    this.impactParticles.explode(IMPACT_PARTICLE_COUNT, this.guard.x, this.guard.y);
+  }
+
+  private setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (paused) {
+      this.cameras.main.shakeEffect.reset();
+      this.cameras.main.flashEffect.reset();
+      this.impactParticles.pause();
+      return;
+    }
+
+    this.impactParticles.resume();
+    if (!this.impactActive) {
+      return;
+    }
+    const shakeRemaining = impactRemainingMs(this.impactElapsedMs, IMPACT_SHAKE_DURATION_MS);
+    if (shakeRemaining > 0) {
+      this.cameras.main.shake(shakeRemaining, IMPACT_SHAKE_INTENSITY, true);
+    }
+    const flashRemaining = impactRemainingMs(this.impactElapsedMs, IMPACT_FLASH_DURATION_MS);
+    if (flashRemaining > 0) {
+      this.cameras.main.flash(
+        flashRemaining,
+        IMPACT_FLASH_RED,
+        IMPACT_FLASH_GREEN,
+        IMPACT_FLASH_BLUE,
+        true,
+      );
+    }
   }
 
   private drawGrid(): void {
@@ -268,6 +393,14 @@ export class GameScene extends Phaser.Scene {
 
     this.transitionGraphics.clear();
     if (this.lastTransition === null) {
+      return;
+    }
+    if (this.impactActive && this.lastTransition.next === "pursuing") {
+      const impactStyle = impactRingStyle(this.impactElapsedMs);
+      if (impactStyle.alpha > 0) {
+        this.transitionGraphics.lineStyle(4, IMPACT_RING_COLOR, impactStyle.alpha);
+        this.transitionGraphics.strokeCircle(this.guard.x, this.guard.y, impactStyle.radius);
+      }
       return;
     }
     const progress = flashProgress(this.flashElapsedMs, FLASH_DURATION_MS);
