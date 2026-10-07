@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  blockedRouteCell,
   createInitialGuardState,
   DEFAULT_GUARD_CONFIG,
   updateGuardSimulation,
@@ -7,8 +8,9 @@ import {
   type GuardSimulationState,
   type GuardSimulationUpdate,
 } from "../../src/application/simulation/guardSimulation";
-import { cellCenter, createGridMap, type GridMap, type GridPoint } from "../../src/domain/model/grid";
+import { cellCenter, createGridMap, worldToCell, type GridMap, type GridPoint } from "../../src/domain/model/grid";
 import { latestTransitions } from "../../src/domain/telemetry/telemetry";
+import { effectiveMap } from "../../src/domain/model/doors";
 
 const TILE = 16;
 
@@ -198,5 +200,67 @@ describe("guard simulation", () => {
     expect(state.behavior.name).toBe("pursuing");
     expect(advanced).toBe(true);
     expect(state.position.x).toBeLessThan(cellCenter({ x: 1, y: 6 }, TILE).x);
+  });
+
+  it("finds the first blocked waypoint cell", () => {
+    const map = createGridMap(5, 5, [{ x: 2, y: 0 }]);
+    const waypoints = [
+      cellCenter({ x: 1, y: 0 }, TILE),
+      cellCenter({ x: 2, y: 0 }, TILE),
+      cellCenter({ x: 3, y: 0 }, TILE),
+    ];
+
+    expect(blockedRouteCell(map, waypoints, TILE)).toEqual({ x: 2, y: 0 });
+    expect(blockedRouteCell(map, [cellCenter({ x: 1, y: 0 }, TILE)], TILE)).toBeNull();
+    expect(blockedRouteCell(map, [], TILE)).toBeNull();
+  });
+
+  it("invalidates and replans when a waypoint becomes blocked", () => {
+    const config = testConfig();
+    const open = openMap();
+    let state = createInitialGuardState(cellCenter({ x: 4, y: 6 }, TILE), TILE, config);
+    state = tick(state, { x: 13, y: 11 }, 0, config, open).state;
+    expect(state.waypoints.length).toBeGreaterThan(0);
+
+    const blocked = createGridMap(14, 12, [{ x: 3, y: 6 }]);
+    const update = tick(state, { x: 13, y: 11 }, 16, config, blocked);
+    const entries = latestTransitions(update.state.telemetry, 20);
+    const invalidated = entries.find((entry) => entry.event === "route-invalidated");
+
+    expect(invalidated).toBeDefined();
+    expect(invalidated?.previous).toBe(invalidated?.next);
+    const cells = update.state.waypoints.map((waypoint) => worldToCell(waypoint, TILE));
+    expect(cells.some((cell) => cell.x === 3 && cell.y === 6)).toBe(false);
+  });
+
+  it("clamps a blocked destination to an adjacent walkable cell", () => {
+    const config: GuardConfig = { ...testConfig(), patrolPoints: [{ x: 3, y: 6 }] };
+    const map = createGridMap(14, 12, [{ x: 3, y: 6 }]);
+    const state = createInitialGuardState(cellCenter({ x: 5, y: 6 }, TILE), TILE, config);
+    const update = tick(state, { x: 13, y: 11 }, 16, config, map);
+
+    expect(update.state.planFailed).toBe(false);
+    const cells = update.state.waypoints.map((waypoint) => worldToCell(waypoint, TILE));
+    expect(cells.some((cell) => cell.x === 3 && cell.y === 6)).toBe(false);
+  });
+
+  it("routes through an open door when it is the shortest path", () => {
+    const config: GuardConfig = { ...testConfig(), patrolPoints: [{ x: 4, y: 2 }] };
+    const base = createGridMap(5, 5, [
+      { x: 2, y: 0 },
+      { x: 2, y: 1 },
+      { x: 2, y: 2 },
+      { x: 2, y: 3 },
+      { x: 2, y: 4 },
+    ]);
+    const door = [{ x: 2, y: 2 }];
+    const open = effectiveMap(base, door, door);
+
+    const state = createInitialGuardState(cellCenter({ x: 0, y: 2 }, TILE), TILE, config);
+    const update = tick(state, { x: 4, y: 4 }, 16, config, open);
+    const cells = update.state.waypoints.map((waypoint) => worldToCell(waypoint, TILE));
+
+    expect(update.state.planFailed).toBe(false);
+    expect(cells.some((cell) => cell.x === 2 && cell.y === 2)).toBe(true);
   });
 });

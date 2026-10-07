@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createGridMap } from "../../src/domain/model/grid";
+import { effectiveMap } from "../../src/domain/model/doors";
 import { evaluateSound, evaluateVision } from "../../src/domain/perception/perception";
 
 const OPEN_MAP = createGridMap(8, 8, []);
@@ -33,6 +34,22 @@ describe("vision", () => {
     expect(evaluateVision({ ...BASE_VISION, map })).toMatchObject({
       visible: false,
       reason: "occluded",
+    });
+  });
+
+  it("occludes vision through a closed door and reveals it when open", () => {
+    const base = createGridMap(8, 8, [{ x: 3, y: 1 }]);
+    const doors = [{ x: 3, y: 1 }];
+    const closed = effectiveMap(base, doors, []);
+    const open = effectiveMap(base, doors, doors);
+
+    expect(evaluateVision({ ...BASE_VISION, map: closed })).toMatchObject({
+      visible: false,
+      reason: "occluded",
+    });
+    expect(evaluateVision({ ...BASE_VISION, map: open })).toMatchObject({
+      visible: true,
+      reason: "visible",
     });
   });
 

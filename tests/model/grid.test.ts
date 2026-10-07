@@ -5,6 +5,7 @@ import {
   createGridMap,
   hasAdjacentObstacle,
   isWalkable,
+  nearestWalkable,
   worldToCell,
 } from "../../src/domain/model/grid";
 
@@ -57,6 +58,45 @@ describe("grid map", () => {
       expect(hasAdjacentObstacle(map, { x: 0, y: 1 })).toBe(true);
       expect(hasAdjacentObstacle(map, { x: 1, y: 0 })).toBe(true);
       expect(hasAdjacentObstacle(map, { x: 3, y: 3 })).toBe(true);
+    });
+  });
+
+  describe("nearestWalkable", () => {
+    it("returns the same cell when walkable", () => {
+      const map = createGridMap(3, 3, []);
+      const cell = { x: 1, y: 1 };
+      expect(nearestWalkable(map, cell)).toEqual(cell);
+    });
+
+    it("returns first cardinal walkable neighbor in order N/E/S/W", () => {
+      const map = createGridMap(3, 3, [{ x: 1, y: 1 }]);
+      expect(nearestWalkable(map, { x: 1, y: 1 })).toEqual({ x: 1, y: 0 });
+      const map2 = createGridMap(3, 3, [{ x: 1, y: 1 }, { x: 1, y: 0 }]);
+      expect(nearestWalkable(map2, { x: 1, y: 1 })).toEqual({ x: 2, y: 1 });
+      const map3 = createGridMap(3, 3, [
+        { x: 1, y: 1 },
+        { x: 1, y: 0 },
+        { x: 2, y: 1 },
+      ]);
+      expect(nearestWalkable(map3, { x: 1, y: 1 })).toEqual({ x: 1, y: 2 });
+      const map4 = createGridMap(3, 3, [
+        { x: 1, y: 1 },
+        { x: 1, y: 0 },
+        { x: 2, y: 1 },
+        { x: 1, y: 2 },
+      ]);
+      expect(nearestWalkable(map4, { x: 1, y: 1 })).toEqual({ x: 0, y: 1 });
+    });
+
+    it("returns original cell when no neighbor is free", () => {
+      const map = createGridMap(3, 3, [
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+        { x: 2, y: 1 },
+        { x: 1, y: 2 },
+        { x: 1, y: 0 },
+      ]);
+      expect(nearestWalkable(map, { x: 1, y: 1 })).toEqual({ x: 1, y: 1 });
     });
   });
 });

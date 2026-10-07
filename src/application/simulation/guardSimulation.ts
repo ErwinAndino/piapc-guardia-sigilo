@@ -25,6 +25,7 @@ import {
 } from "../../domain/navigation/search";
 import { PATROL_POINTS } from "./labLevel";
 import type { VisionResult } from "../../domain/perception/perception";
+import { nearestWalkable } from "../../domain/model/grid";
 
 export interface GuardConfig {
   readonly guardSpeed: number;
@@ -108,6 +109,41 @@ export function createInitialGuardState(
   };
 }
 
+export function blockedRouteCell(
+  map: GridMap,
+  waypoints: readonly GridPoint[],
+  tileSize: number,
+): GridPoint | null {
+  for (let index = 0; index < waypoints.length; index += 1) {
+    const wp = waypoints[index];
+    if (wp === undefined) {
+      continue;
+    }
+    const cell = worldToCell(wp, tileSize);
+    if (!isWalkable(map, cell)) {
+      return cell;
+    }
+  }
+  return null;
+}
+
+function isWalkable(map: GridMap, point: GridPoint): boolean {
+  return isInside(map, point) && !map.blocked.has(cellKey(point));
+}
+
+function isInside(map: Pick<GridMap, "width" | "height">, point: GridPoint): boolean {
+  return Number.isInteger(point.x)
+    && Number.isInteger(point.y)
+    && point.x >= 0
+    && point.y >= 0
+    && point.x < map.width
+    && point.y < map.height;
+}
+
+function cellKey(point: GridPoint): string {
+  return `${point.x},${point.y}`;
+}
+
 export function updateGuardSimulation(
   previous: GuardSimulationState,
   input: GuardSimulationInput,
@@ -128,18 +164,35 @@ export function updateGuardSimulation(
   let position = previous.position;
   let facing = previous.facing;
   let nextWaypoint = previous.nextWaypoint;
+  let routeInvalidated = false;
 
   if (previous.behavior.phase === "navigating" && previous.waypoints.length > 0) {
-    const movement = advanceAlongPath(
-      position,
-      previous.waypoints,
-      previous.nextWaypoint,
-      config.guardSpeed * input.deltaMs / 1000,
+    const blockedCell = blockedRouteCell(
+      input.map,
+      previous.waypoints.slice(previous.nextWaypoint),
+      input.tileSize,
     );
-    position = movement.position;
-    nextWaypoint = movement.nextWaypoint;
-    if (movement.direction) {
-      facing = movement.direction;
+    if (blockedCell) {
+      routeInvalidated = true;
+      telemetry = recordTelemetry(telemetry, {
+        timeMs: input.timeMs,
+        previous: previous.behavior.name,
+        event: "route-invalidated",
+        next: previous.behavior.name,
+        cause: `blocked:${blockedCell.x},${blockedCell.y}`,
+      });
+    } else {
+      const movement = advanceAlongPath(
+        position,
+        previous.waypoints,
+        previous.nextWaypoint,
+        config.guardSpeed * input.deltaMs / 1000,
+      );
+      position = movement.position;
+      nextWaypoint = movement.nextWaypoint;
+      if (movement.direction) {
+        facing = movement.direction;
+      }
     }
   }
 
@@ -208,6 +261,10 @@ export function updateGuardSimulation(
     targetCell = previous.goalCell;
   }
 
+  if (targetCell !== null) {
+    targetCell = nearestWalkable(input.map, targetCell);
+  }
+
   const shouldMove = intent.kind !== "look"
     && behavior.phase === "navigating"
     && targetCell !== null;
@@ -219,7 +276,7 @@ export function updateGuardSimulation(
   if (shouldMove && targetCell !== null) {
     const goalChanged = goalCell === null || !cellEquals(targetCell, goalCell);
 
-    if (goalChanged || previous.waypoints.length === 0) {
+    if (goalChanged || previous.waypoints.length === 0 || routeInvalidated) {
       const plan = calculateRoute(input.map, guardCell, targetCell, input.algorithm);
       if (plan.status === "success") {
         const cells = plan.path.map((point) => cellCenter(point, input.tileSize));

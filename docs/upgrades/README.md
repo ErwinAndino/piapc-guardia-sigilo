@@ -59,7 +59,7 @@ El codigo del upgrade 01 no tiene commits propios: proviene del baseline `f80466
 | 07 | Distractores sonoros interactivos | `07-distractores-sonoros/` | Oportunidad y planificacion para el jugador | spec pendiente |
 | 08 | Medidor de alerta y estados del nivel | `08-medidor-alerta-estados/` | Consecuencias visibles del peligro | spec pendiente |
 | 09 | Escape de ultimo momento | `09-escape-ultimo-momento/` | Feedback de alivio ante una maniobra ajustada | spec pendiente |
-| 10 | Puertas, atajos o rutas bloqueables | `10-puertas-atajos-rutas/` | Transformacion del espacio y la estrategia | spec pendiente |
+| 10 | Puertas, atajos o rutas bloqueables | `10-puertas-atajos-rutas/` | Transformacion del espacio y la estrategia | spec en borrador (2026-10-06) |
 
 ## Ciclo por upgrade
 

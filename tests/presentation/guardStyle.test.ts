@@ -108,6 +108,17 @@ describe("latest state transition", () => {
     expect(latestStateTransition(log(unreachable))).toBeNull();
   });
 
+  it("ignores route-invalidated entries where previous equals next", () => {
+    const invalidated = entry({
+      timeMs: 120,
+      previous: "pursuing",
+      event: "route-invalidated",
+      next: "pursuing",
+      cause: "blocked:4,6",
+    });
+    expect(latestStateTransition(log(invalidated))).toBeNull();
+  });
+
   it("returns the latest real transition among mixed entries", () => {
     const reset = entry({ timeMs: 0, previous: null, event: "reset", next: "patrolling" });
     const vision = entry({

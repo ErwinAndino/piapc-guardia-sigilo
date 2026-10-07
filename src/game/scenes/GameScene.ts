@@ -7,6 +7,7 @@ import {
   PATROL_POINTS,
   PLAYER_START,
   TILE_SIZE,
+  DOOR_CELLS,
 } from "../../application/simulation/labLevel";
 import {
   createInitialGuardState,
@@ -14,7 +15,7 @@ import {
   updateGuardSimulation,
   type GuardSimulationState,
 } from "../../application/simulation/guardSimulation";
-import { cellCenter, hasAdjacentObstacle, isWalkable, worldToCell } from "../../domain/model/grid";
+import { cellCenter, hasAdjacentObstacle, isWalkable, worldToCell, type GridPoint } from "../../domain/model/grid";
 import { STATE_LABELS } from "../../domain/behavior/guardBehavior";
 import { latestTransitions, type TelemetryEntry } from "../../domain/telemetry/telemetry";
 import type { SearchAlgorithm } from "../../domain/navigation/search";
@@ -57,6 +58,8 @@ import {
   cameraFocus,
   zoomTargetFor,
 } from "../presentation/cameraTension";
+import { doorHintFor, doorsHudLine, doorStyleFor } from "../presentation/doorStyle";
+import { doorInteraction, effectiveMap } from "../../domain/model/doors";
 
 const PLAYER_SPEED = 190;
 const GUARD_RADIUS = 11;
@@ -112,6 +115,11 @@ export class GameScene extends Phaser.Scene {
   private tensionZoom = ZOOM_BASE;
   private coverAdjacent = false;
   private playerCovered = false;
+  private openDoors: Set<string> = new Set();
+  private doorKey!: Phaser.Input.Keyboard.Key;
+  private doorGraphics!: Phaser.GameObjects.Graphics;
+  private wallsGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private doorsGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   public constructor() {
     super("GameScene");
@@ -130,16 +138,28 @@ export class GameScene extends Phaser.Scene {
     this.tensionZoom = ZOOM_BASE;
     this.cameras.main.setZoom(ZOOM_BASE);
     this.cameras.main.centerOn(MAP_CENTER.x, MAP_CENTER.y);
+    this.openDoors = new Set();
     this.drawGrid();
 
-    const walls = this.physics.add.staticGroup();
+    this.wallsGroup = this.physics.add.staticGroup();
+    this.doorsGroup = this.physics.add.staticGroup();
     for (let y = 0; y < GRID_HEIGHT; y += 1) {
       for (let x = 0; x < GRID_WIDTH; x += 1) {
-        if (!isWalkable(LAB_MAP, { x, y })) {
-          const center = cellCenter({ x, y }, TILE_SIZE);
+        const cell: GridPoint = { x, y };
+        if (isWalkable(LAB_MAP, cell)) {
+          continue;
+        }
+        const isDoor = DOOR_CELLS.some((d) => d.x === x && d.y === y);
+        const center = cellCenter(cell, TILE_SIZE);
+        if (isDoor) {
+          const door = this.add.rectangle(center.x, center.y, TILE_SIZE, TILE_SIZE, 0x8a5a2b);
+          door.setStrokeStyle(2, 0xd9a05b);
+          door.setDepth(1);
+          this.doorsGroup.add(door);
+        } else {
           const wall = this.add.rectangle(center.x, center.y, TILE_SIZE, TILE_SIZE, 0x27333d);
           wall.setStrokeStyle(1, 0x3a4c58);
-          walls.add(wall);
+          this.wallsGroup.add(wall);
         }
       }
     }
@@ -151,7 +171,8 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.existing(this.player);
     this.playerBody = this.player.body as Phaser.Physics.Arcade.Body;
     this.playerBody.setCollideWorldBounds(true);
-    this.physics.add.collider(this.player, walls);
+    this.physics.add.collider(this.player, this.wallsGroup);
+    this.physics.add.collider(this.player, this.doorsGroup);
 
     const keyboard = this.input.keyboard;
     if (!keyboard) {
@@ -169,12 +190,14 @@ export class GameScene extends Phaser.Scene {
     this.pauseKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     this.stepKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.N);
     this.coverKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+    this.doorKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
     this.perceptionGraphics = this.add.graphics().setDepth(1);
     this.navigationGraphics = this.add.graphics().setDepth(2);
     this.patrolGraphics = this.add.graphics().setDepth(3);
     this.sightLineGraphics = this.add.graphics().setDepth(1.5);
     this.transitionGraphics = this.add.graphics().setDepth(5);
+    this.doorGraphics = this.add.graphics().setDepth(1.2);
 
     const guardPosition = cellCenter(GUARD_START, TILE_SIZE);
     this.guard = this.add
@@ -248,7 +271,8 @@ export class GameScene extends Phaser.Scene {
     const velocity = new Phaser.Math.Vector2(horizontal, vertical);
 
     const playerCell = worldToCell({ x: this.player.x, y: this.player.y }, TILE_SIZE);
-    this.coverAdjacent = hasAdjacentObstacle(LAB_MAP, playerCell);
+    const effective = effectiveMap(LAB_MAP, [...DOOR_CELLS], this.openDoorsAsArray());
+    this.coverAdjacent = hasAdjacentObstacle(effective, playerCell);
     this.playerCovered = this.coverAdjacent && this.coverKey.isDown;
 
     if (velocity.lengthSq() > 0) {
@@ -256,13 +280,81 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.playerBody.setVelocity(velocity.x, velocity.y);
+
+    if (!this.paused && Phaser.Input.Keyboard.JustDown(this.doorKey)) {
+      const guardCell = worldToCell(this.guardState.position, TILE_SIZE);
+      const interaction = doorInteraction([...DOOR_CELLS], this.openDoorsAsArray(), playerCell, guardCell);
+      if (interaction.interaction === "open" && interaction.door) {
+        this.openDoors.add(`${interaction.door.x},${interaction.door.y}`);
+        this.updateDoorColliders();
+      } else if (interaction.interaction === "close" && interaction.door) {
+        this.openDoors.delete(`${interaction.door.x},${interaction.door.y}`);
+        this.updateDoorColliders();
+      }
+    }
+
+    this.updateDoorGraphics();
     this.updateGuard(time, delta, soundRequested);
     this.render();
   }
 
+  private openDoorsAsArray(): Array<{ x: number; y: number }> {
+    return Array.from(this.openDoors).map((key) => {
+      const [xStr, yStr] = key.split(",");
+      return { x: Number(xStr), y: Number(yStr) };
+    });
+  }
+
+  private updateDoorColliders(): void {
+    this.doorsGroup.children.iterate((child) => {
+      const go = child as Phaser.Physics.Arcade.Sprite | Phaser.GameObjects.Rectangle;
+      if (!(go instanceof Phaser.GameObjects.Rectangle)) {
+        return null;
+      }
+      const key = this.doorKeyFromSprite(go);
+      if (key === null) {
+        (go.body as Phaser.Physics.Arcade.Body).enable = true;
+        return null;
+      }
+      const isOpen = this.openDoors.has(key);
+      const body = go.body as Phaser.Physics.Arcade.Body;
+      if (isOpen) {
+        body.enable = false;
+      } else {
+        body.enable = true;
+        body.reset(go.x, go.y);
+      }
+      return null;
+    });
+  }
+
+  private doorKeyFromSprite(sprite: Phaser.GameObjects.Rectangle): string | null {
+    const pos = worldToCell({ x: sprite.x, y: sprite.y }, TILE_SIZE);
+    const key = `${pos.x},${pos.y}`;
+    if (DOOR_CELLS.some((d) => d.x === pos.x && d.y === pos.y)) {
+      return key;
+    }
+    return null;
+  }
+
+  private updateDoorGraphics(): void {
+    this.doorGraphics.clear();
+    for (const door of DOOR_CELLS) {
+      const center = cellCenter(door, TILE_SIZE);
+      const key = `${door.x},${door.y}`;
+      const isOpen = this.openDoors.has(key);
+      const style = doorStyleFor(isOpen);
+      this.doorGraphics.fillStyle(style.fill, style.alpha);
+      this.doorGraphics.fillRect(center.x - TILE_SIZE / 2, center.y - TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+      this.doorGraphics.lineStyle(style.strokeWidth, style.stroke, style.alpha);
+      this.doorGraphics.strokeRect(center.x - TILE_SIZE / 2, center.y - TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
   private updateGuard(time: number, delta: number, soundRequested: boolean): void {
+    const effective = effectiveMap(LAB_MAP, [...DOOR_CELLS], this.openDoorsAsArray());
     const update = updateGuardSimulation(this.guardState, {
-      map: LAB_MAP,
+      map: effective,
       tileSize: TILE_SIZE,
       playerPosition: { x: this.player.x, y: this.player.y },
       playerSoundRequested: soundRequested,
@@ -534,12 +626,18 @@ export class GameScene extends Phaser.Scene {
     const transitions = latestTransitions(this.guardState.telemetry, 3)
       .map(formatTransition);
 
+    const playerCell = worldToCell({ x: this.player.x, y: this.player.y }, TILE_SIZE);
+    const guardCell = worldToCell(this.guardState.position, TILE_SIZE);
+    const doorResult = doorInteraction([...DOOR_CELLS], this.openDoorsAsArray(), playerCell, guardCell);
+    const hint = doorHintFor(doorResult.interaction);
+
     this.hud.setText([
       `estado ${STATE_LABELS[behavior.name]} / ${phaseLabel}`,
       `algoritmo ${algorithm}${this.paused ? " | " + pauseLabel : ""}`,
       `vision ${VISION_LABELS[this.lastVision.reason]}`,
       `cobertura ${coverLabel(this.coverAdjacent, this.playerCovered)}`,
       `sonido ${sound}`,
+      doorsHudLine(this.openDoors.size, DOOR_CELLS.length, hint),
       memory,
       ...transitions,
     ]);

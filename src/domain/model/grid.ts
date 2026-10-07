@@ -66,6 +66,21 @@ export function hasAdjacentObstacle(map: GridMap, cell: GridPoint): boolean {
   ));
 }
 
+export function nearestWalkable(map: GridMap, cell: GridPoint): GridPoint {
+  if (isWalkable(map, cell)) {
+    return cell;
+  }
+
+  for (const offset of CARDINAL_OFFSETS) {
+    const neighbor = { x: cell.x + offset.x, y: cell.y + offset.y };
+    if (isWalkable(map, neighbor)) {
+      return neighbor;
+    }
+  }
+
+  return cell;
+}
+
 export function cellCenter(point: GridPoint, tileSize: number): GridPoint {
   assertValidTileSize(tileSize);
   if (!Number.isInteger(point.x) || !Number.isInteger(point.y)) {
