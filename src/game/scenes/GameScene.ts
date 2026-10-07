@@ -14,7 +14,7 @@ import {
   updateGuardSimulation,
   type GuardSimulationState,
 } from "../../application/simulation/guardSimulation";
-import { cellCenter, isWalkable } from "../../domain/model/grid";
+import { cellCenter, hasAdjacentObstacle, isWalkable, worldToCell } from "../../domain/model/grid";
 import { STATE_LABELS } from "../../domain/behavior/guardBehavior";
 import { latestTransitions, type TelemetryEntry } from "../../domain/telemetry/telemetry";
 import type { SearchAlgorithm } from "../../domain/navigation/search";
@@ -22,8 +22,10 @@ import {
   timeSinceLastPerception,
   type PerceptionSource,
 } from "../../domain/perception/memory";
-import type { VisionReason, VisionResult } from "../../domain/perception/perception";
+import type { VisionResult } from "../../domain/perception/perception";
 import { coneStyleFor } from "../presentation/coneStyle";
+import { coverLabel, playerSpeedFor, VISION_LABELS } from "../presentation/coverStyle";
+import { sightLineSegments, sightLineStyleFor } from "../presentation/sightLine";
 import {
   flashProgress,
   guardBodyStyleFor,
@@ -68,13 +70,6 @@ const MAP_CENTER = {
   x: (GRID_WIDTH * TILE_SIZE) / 2,
   y: (GRID_HEIGHT * TILE_SIZE) / 2,
 };
-const VISION_LABELS: Readonly<Record<VisionReason, string>> = {
-  visible: "VISIBLE",
-  "out-of-range": "FUERA DE RANGO",
-  "outside-cone": "FUERA DEL CONO",
-  occluded: "OCLUIDO",
-  "invalid-facing": "DIRECCION INVALIDA",
-};
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Rectangle;
@@ -90,9 +85,11 @@ export class GameScene extends Phaser.Scene {
   private emitSound!: Phaser.Input.Keyboard.Key;
   private pauseKey!: Phaser.Input.Keyboard.Key;
   private stepKey!: Phaser.Input.Keyboard.Key;
+  private coverKey!: Phaser.Input.Keyboard.Key;
   private patrolGraphics!: Phaser.GameObjects.Graphics;
   private navigationGraphics!: Phaser.GameObjects.Graphics;
   private perceptionGraphics!: Phaser.GameObjects.Graphics;
+  private sightLineGraphics!: Phaser.GameObjects.Graphics;
   private transitionGraphics!: Phaser.GameObjects.Graphics;
   private lastKnownMarker!: Phaser.GameObjects.Arc;
   private hudCamera!: Phaser.Cameras.Scene2D.Camera;
@@ -113,6 +110,8 @@ export class GameScene extends Phaser.Scene {
   };
   private lastSoundHeard = false;
   private tensionZoom = ZOOM_BASE;
+  private coverAdjacent = false;
+  private playerCovered = false;
 
   public constructor() {
     super("GameScene");
@@ -169,10 +168,12 @@ export class GameScene extends Phaser.Scene {
     this.emitSound = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.pauseKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
     this.stepKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.N);
+    this.coverKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
 
     this.perceptionGraphics = this.add.graphics().setDepth(1);
     this.navigationGraphics = this.add.graphics().setDepth(2);
     this.patrolGraphics = this.add.graphics().setDepth(3);
+    this.sightLineGraphics = this.add.graphics().setDepth(1.5);
     this.transitionGraphics = this.add.graphics().setDepth(5);
 
     const guardPosition = cellCenter(GUARD_START, TILE_SIZE);
@@ -246,8 +247,12 @@ export class GameScene extends Phaser.Scene {
       - Number(this.cursors.up.isDown || this.moveUp.isDown);
     const velocity = new Phaser.Math.Vector2(horizontal, vertical);
 
+    const playerCell = worldToCell({ x: this.player.x, y: this.player.y }, TILE_SIZE);
+    this.coverAdjacent = hasAdjacentObstacle(LAB_MAP, playerCell);
+    this.playerCovered = this.coverAdjacent && this.coverKey.isDown;
+
     if (velocity.lengthSq() > 0) {
-      velocity.normalize().scale(PLAYER_SPEED);
+      velocity.normalize().scale(playerSpeedFor(this.playerCovered, PLAYER_SPEED));
     }
 
     this.playerBody.setVelocity(velocity.x, velocity.y);
@@ -261,6 +266,7 @@ export class GameScene extends Phaser.Scene {
       tileSize: TILE_SIZE,
       playerPosition: { x: this.player.x, y: this.player.y },
       playerSoundRequested: soundRequested,
+      playerCovered: this.playerCovered,
       timeMs: time,
       deltaMs: delta,
       algorithm: this.algorithm,
@@ -407,8 +413,26 @@ export class GameScene extends Phaser.Scene {
   private render(): void {
     this.drawRoute();
     this.drawPerception();
+    this.drawSightLine();
     this.drawGuardBody();
     this.renderHud();
+  }
+
+  private drawSightLine(): void {
+    this.sightLineGraphics.clear();
+    const style = sightLineStyleFor(this.lastVision.reason);
+    this.sightLineGraphics.lineStyle(style.width, style.color, style.alpha);
+    const from = { x: this.guard.x, y: this.guard.y };
+    const to = { x: this.player.x, y: this.player.y };
+
+    if (style.dashed) {
+      for (const [start, end] of sightLineSegments(from, to)) {
+        this.sightLineGraphics.lineBetween(start.x, start.y, end.x, end.y);
+      }
+      return;
+    }
+
+    this.sightLineGraphics.lineBetween(from.x, from.y, to.x, to.y);
   }
 
   private drawGuardBody(): void {
@@ -514,6 +538,7 @@ export class GameScene extends Phaser.Scene {
       `estado ${STATE_LABELS[behavior.name]} / ${phaseLabel}`,
       `algoritmo ${algorithm}${this.paused ? " | " + pauseLabel : ""}`,
       `vision ${VISION_LABELS[this.lastVision.reason]}`,
+      `cobertura ${coverLabel(this.coverAdjacent, this.playerCovered)}`,
       `sonido ${sound}`,
       memory,
       ...transitions,

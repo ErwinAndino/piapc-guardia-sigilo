@@ -53,6 +53,19 @@ export function isWalkable(map: GridMap, point: GridPoint): boolean {
   return isInside(map, point) && !map.blocked.has(cellKey(point));
 }
 
+const CARDINAL_OFFSETS: readonly GridPoint[] = [
+  { x: 0, y: -1 },
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+];
+
+export function hasAdjacentObstacle(map: GridMap, cell: GridPoint): boolean {
+  return CARDINAL_OFFSETS.some((offset) => (
+    !isWalkable(map, { x: cell.x + offset.x, y: cell.y + offset.y })
+  ));
+}
+
 export function cellCenter(point: GridPoint, tileSize: number): GridPoint {
   assertValidTileSize(tileSize);
   if (!Number.isInteger(point.x) || !Number.isInteger(point.y)) {

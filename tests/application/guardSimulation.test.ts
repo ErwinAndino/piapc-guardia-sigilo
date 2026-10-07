@@ -32,7 +32,7 @@ function tick(
   timeMs: number,
   config: GuardConfig,
   map: GridMap,
-  options: { sound?: boolean; deltaMs?: number } = {},
+  options: { sound?: boolean; deltaMs?: number; covered?: boolean } = {},
 ): GuardSimulationUpdate {
   return updateGuardSimulation(state, {
     map,
@@ -42,6 +42,7 @@ function tick(
     timeMs,
     deltaMs: options.deltaMs ?? 16,
     algorithm: "astar",
+    playerCovered: options.covered ?? false,
   }, config);
 }
 
@@ -76,6 +77,25 @@ describe("guard simulation", () => {
     expect(update.state.behavior.name).toBe("pursuing");
     expect(latestTransitions(update.state.telemetry, 10).map((entry) => entry.event))
       .toContain("vision-acquired");
+  });
+
+  it("does not acquire, update memory nor pursue when the player is covered", () => {
+    const config = testConfig();
+    const state = createInitialGuardState(cellCenter({ x: 4, y: 6 }, TILE), TILE, config);
+    const update = tick(
+      state,
+      { x: 2, y: 6 },
+      16,
+      config,
+      openMap(),
+      { covered: true },
+    );
+
+    expect(update.vision).toMatchObject({ visible: false, reason: "covered" });
+    expect(update.state.behavior.name).not.toBe("pursuing");
+    expect(update.state.perception.memory.lastKnownPosition).toBeNull();
+    expect(latestTransitions(update.state.telemetry, 10).map((entry) => entry.event))
+      .not.toContain("vision-acquired");
   });
 
   it("investigates a heard sound that is not visible", () => {

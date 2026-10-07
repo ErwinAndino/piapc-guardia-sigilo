@@ -32,6 +32,7 @@ export interface PerceptionFrameInput {
   readonly visionRange: number;
   readonly fieldOfViewRadians: number;
   readonly timeMs: number;
+  readonly playerCovered?: boolean;
 }
 
 export function initialPerceptionState(): PerceptionSimulationState {
@@ -76,6 +77,7 @@ export function updatePerceptionSimulation(
     target: input.target,
     range: input.visionRange,
     fieldOfViewRadians: input.fieldOfViewRadians,
+    covered: input.playerCovered ?? false,
   });
   if (vision.visible) {
     memory = rememberObservation(memory, {

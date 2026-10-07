@@ -1,7 +1,13 @@
 import { isWalkable, worldToCell, type GridMap } from "../model/grid";
 import { assertFiniteVector, distanceBetween, normalized, type Vector2 } from "../model/vector";
 
-export type VisionReason = "visible" | "out-of-range" | "outside-cone" | "occluded" | "invalid-facing";
+export type VisionReason =
+  | "visible"
+  | "out-of-range"
+  | "outside-cone"
+  | "occluded"
+  | "invalid-facing"
+  | "covered";
 
 export interface VisionQuery {
   readonly map: GridMap;
@@ -11,6 +17,7 @@ export interface VisionQuery {
   readonly target: Vector2;
   readonly range: number;
   readonly fieldOfViewRadians: number;
+  readonly covered?: boolean;
 }
 
 export interface VisionResult {
@@ -72,6 +79,10 @@ export function evaluateVision(query: VisionQuery): VisionResult {
 
   if (lineIsOccluded(query.map, query.tileSize, query.observer, query.target)) {
     return { visible: false, reason: "occluded", distance };
+  }
+
+  if (query.covered === true) {
+    return { visible: false, reason: "covered", distance };
   }
 
   return { visible: true, reason: "visible", distance };

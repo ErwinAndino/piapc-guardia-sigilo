@@ -102,6 +102,44 @@ describe("vision", () => {
       "invalid-facing",
     );
   });
+
+  it("hides a target that would otherwise be visible when covered", () => {
+    expect(evaluateVision({ ...BASE_VISION, covered: true })).toMatchObject({
+      visible: false,
+      reason: "covered",
+    });
+    expect(evaluateVision({ ...BASE_VISION, covered: false })).toMatchObject({
+      visible: true,
+      reason: "visible",
+    });
+    expect(evaluateVision(BASE_VISION)).toMatchObject({
+      visible: true,
+      reason: "visible",
+    });
+  });
+
+  it("does not mask other vision causes when covered", () => {
+    const wallMap = createGridMap(8, 8, [{ x: 3, y: 1 }]);
+
+    expect(evaluateVision({ ...BASE_VISION, map: wallMap, covered: true }).reason).toBe(
+      "occluded",
+    );
+    expect(evaluateVision({
+      ...BASE_VISION,
+      target: { x: 75, y: 15 },
+      covered: true,
+    }).reason).toBe("out-of-range");
+    expect(evaluateVision({
+      ...BASE_VISION,
+      target: { x: 15, y: 45 },
+      covered: true,
+    }).reason).toBe("outside-cone");
+    expect(evaluateVision({
+      ...BASE_VISION,
+      facing: { x: 0, y: 0 },
+      covered: true,
+    }).reason).toBe("invalid-facing");
+  });
 });
 
 describe("sound", () => {

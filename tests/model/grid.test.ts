@@ -3,6 +3,7 @@ import { LAB_MAP, PLAYER_START, TILE_SIZE } from "../../src/application/simulati
 import {
   cellCenter,
   createGridMap,
+  hasAdjacentObstacle,
   isWalkable,
   worldToCell,
 } from "../../src/domain/model/grid";
@@ -36,5 +37,26 @@ describe("grid map", () => {
     expect(() => worldToCell({ x: Number.NaN, y: 0 }, TILE_SIZE)).toThrow(
       "World coordinates",
     );
+  });
+
+  describe("hasAdjacentObstacle", () => {
+    const map = createGridMap(4, 4, [{ x: 2, y: 2 }]);
+
+    it("is false for an interior cell whose cardinal neighbours are walkable", () => {
+      expect(hasAdjacentObstacle(map, { x: 1, y: 1 })).toBe(false);
+    });
+
+    it("is true when any cardinal neighbour is a blocked cell", () => {
+      expect(hasAdjacentObstacle(map, { x: 1, y: 2 })).toBe(true);
+      expect(hasAdjacentObstacle(map, { x: 2, y: 1 })).toBe(true);
+      expect(hasAdjacentObstacle(map, { x: 3, y: 2 })).toBe(true);
+      expect(hasAdjacentObstacle(map, { x: 2, y: 3 })).toBe(true);
+    });
+
+    it("treats a neighbour outside the map as an obstacle", () => {
+      expect(hasAdjacentObstacle(map, { x: 0, y: 1 })).toBe(true);
+      expect(hasAdjacentObstacle(map, { x: 1, y: 0 })).toBe(true);
+      expect(hasAdjacentObstacle(map, { x: 3, y: 3 })).toBe(true);
+    });
   });
 });

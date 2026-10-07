@@ -71,6 +71,7 @@ export interface GuardSimulationInput {
   readonly timeMs: number;
   readonly deltaMs: number;
   readonly algorithm: SearchAlgorithm;
+  readonly playerCovered?: boolean;
 }
 
 export interface GuardSimulationUpdate {
@@ -151,6 +152,7 @@ export function updateGuardSimulation(
     visionRange: config.visionRange,
     fieldOfViewRadians: config.fieldOfViewRadians,
     timeMs: input.timeMs,
+    playerCovered: input.playerCovered ?? false,
   });
   const memory = perceptionFrame.state.memory;
   const vision = perceptionFrame.vision;
