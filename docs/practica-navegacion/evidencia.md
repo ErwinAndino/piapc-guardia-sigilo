@@ -2,8 +2,8 @@
 
 Repositorio: https://github.com/ErwinAndino/piapc-guardia-sigilo (rama Práctica-guiada-especificar-y-verificar-una-navegación)
 Commit inicial: 74c33ba80108932ecab7976ec806e60e84db6e39
-Commit de implementación: ffc566b83bee5e7888c3162670938312bea460a7
-Versión de entrega: commit informado por el estudiante en la plataforma.
+Commit de implementación: 87dd19f90e81a588d85e279c12d8f3a8c6cbb96e
+Versión de entrega: commit de cierre de documentación informado por el estudiante en la plataforma.
 Variante: A
 Herramienta/modelo o trabajo manual: opencode (agente de desarrollo) + revisión humana.
 Cambios previos: repositorio del laboratorio con 10 upgrades previos (FSM, percepción, presentación, puertas). Navegación BFS/A* ya existente, sin costos.
@@ -48,13 +48,13 @@ Dijkstra: extraer S=0 descubre A=1 y B=3; extraer A=1 descubre G=10; extraer B=3
 | E-AC2 | `npx vitest run tests/application/guardSimulation.test.ts` (`BFS`) | con BFS y `entryCosts` presentes la ruta cruza la franja (BFS ignora costos) | cumple |
 | E-AC3 | `npx vitest run tests/application/labLevel.test.ts tests/presentation/slowTerrainStyle.test.ts` | 20 celdas lentas transitables a costo 5; estilo y leyenda del terreno lento | cumple |
 | BASE-AC5 | `npm run validate` + `git diff --stat` | 21 archivos / 196 pruebas y build OK; diff acotado a navegación, simulación, presentación y pruebas previstas | cumple |
-| BASE-AC6 | URL y commit final | repositorio/rama confirmados; implementación en `ffc566b83bee5e7888c3162670938312bea460a7`; `push` pendiente de autorización | cumple (local) |
+| BASE-AC6 | URL y commit final | repositorio/rama confirmados; implementación en `87dd19f90e81a588d85e279c12d8f3a8c6cbb96e`; cierre en `docs/practica-navegacion/`; `push` pendiente de autorización | cumple (local) |
 
 ## Registro mínimo de intervención
 Prompts: recorrido completo de los pasos 1 a 8 de la guía con la variante A; el único cambio relevante respecto del A* previo es un parámetro opcional de costos de entrada (`entryCosts`) y la suma real de `totalCost`.
 Decisión tras incremento 1: aceptar — A* ponderado con prueba de franja, restauración y caso unitario; 15 pruebas en `tests/navigation/search.test.ts`, diff mínimo y typecheck limpio.
 Decisión tras incremento 2: aceptar — `calculateRoute` propaga los costos de forma explícita; prueba de consumidor 4/4 y el modo unitario existente intacto.
-Extensión aprobada (2026-10-13): aceptar — el terreno lento se define en `labLevel` (franja y=17, x=5..24, costo 5), la simulación del guardia lo consume por configuración explícita y la escena lo marca visualmente. Excede el "fuera de alcance" original; decisión humana registrada en `spec.md §Extensión`.
+Extensión aprobada (2026-10-13): aceptar — el terreno lento se define en `labLevel` (franja y=17, x=5..24, costo 5), la simulación del guardia lo consume por configuración explícita y la escena lo marca visualmente. El anexo autoriza ajustar la geometría y la marca visual; decisión humana registrada en `spec.md §Extensión`.
 Validación final: `npm run validate` = typecheck + `vitest run` (21 archivos / 196 pruebas) + `vite build`, todo correcto.
 Diff revisado: `src/domain/navigation/search.ts`, `src/application/simulation/navigationDemo.ts`, `src/application/simulation/guardSimulation.ts`, `src/application/simulation/labLevel.ts`, `src/game/presentation/slowTerrainStyle.ts`, `src/game/scenes/GameScene.ts`, `tests/navigation/search.test.ts`; nuevos `tests/navigation/fixture5x3.test.ts`, `tests/application/navigationDemo.test.ts`, `tests/application/labLevel.test.ts`, `tests/application/guardSimulation.test.ts`, `tests/presentation/slowTerrainStyle.test.ts` y `docs/practica-navegacion/`. Sin cambios en FSM, percepción, grid ni puertas.
 Conclusión: en el mapa libre unitario BFS y A* coinciden en 4 pasos y costo 4, pero A* expande menos nodos (5 frente a 12). Con la franja lenta de costo 5, la ruta más corta por pasos (4 pasos, costo 16) deja de ser la preferida y el A* ponderado elige un rodeo de 6 pasos con costo 6, respetando la intención de minimizar costo. La capacidad se reutilizó extendiendo el A* existente con un mapa opcional de costos de entrada, sin algoritmo nuevo y sin alterar BFS ni el caso unitario. En el laboratorio, la franja lenta del corredor de patrulla hace que el guardia con A* rodee por y=16/18 mientras BFS cruza la franja. Por eso, para terreno lento conviene A* ponderado y no BFS, que sólo cuenta pasos.

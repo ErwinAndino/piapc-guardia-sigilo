@@ -115,18 +115,19 @@ A-AC2: sin franja lenta, resultado de 4 pasos y costo 4.
 A-AC3: prueba del consumidor confirma que usa el modo ponderado y obtiene
 costo 6 con franja; el modo unitario existente conserva su funcionamiento.
 
-Fuera de alcance: modificar velocidad o editar la geometría jugable. Excepción
-aprobada (2026-10-13): marcar visualmente el terreno lento y conectar los costos
-con el consumidor de simulación, según la extensión de abajo.
-Evidencia: prueba de franja, prueba de restauración, comparación de costos y
-prueba de consumidor; registrar en evidencia.md.
+Fuera de alcance: modificar la velocidad de desplazamiento. Se autoriza ajustar
+la geometría del nivel, crear la representación visual del terreno lento y
+conectar los costos con el consumidor de simulación, según la extensión de abajo.
+Evidencia: prueba de franja, prueba de restauración, comparación de costos,
+prueba de consumidor y marca visual; registrar en evidencia.md.
 
 ## Extensión aprobada: terreno lento en la simulación y su marca visual
 
 Decisión humana (2026-10-13): llevar el modo ponderado al consumidor de
 simulación real y hacer visible la zona lenta para poder observarla en la
-escena. Excede el "fuera de alcance" original del anexo; se autoriza como
-extensión acotada.
+escena. El anexo autoriza explícitamente ajustar la geometría del nivel y crear
+su representación visual, por lo que esta extensión queda dentro del alcance
+aprobado.
 
 E-01: definir el terreno lento del laboratorio como una franja en `y=17`,
 x=5..24, con costo de entrada 5, restringida a celdas transitables.

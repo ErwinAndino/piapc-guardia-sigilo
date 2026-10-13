@@ -298,7 +298,7 @@ describe("terreno lento en el consumidor de simulación", () => {
     return cells.some((cell) => costs.has(`${cell.x},${cell.y}`));
   }
 
-  it("A-AC3: con costos el guardia evita la franja lenta", () => {
+  it("E-AC1: con costos el guardia evita la franja lenta", () => {
     const config = corridorConfig();
     const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
     const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap(), {
@@ -310,7 +310,7 @@ describe("terreno lento en el consumidor de simulación", () => {
     expect(crossesSlowTerrain(routeCells(update), slowCosts())).toBe(false);
   });
 
-  it("A-AC2: sin costos el guardia cruza la franja (mínimo unitario)", () => {
+  it("E-AC1: sin costos el guardia cruza la franja (mínimo unitario)", () => {
     const config = corridorConfig();
     const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
     const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap());
@@ -318,7 +318,7 @@ describe("terreno lento en el consumidor de simulación", () => {
     expect(crossesSlowTerrain(routeCells(update), slowCosts())).toBe(true);
   });
 
-  it("A-01: BFS ignora los costos y cruza la franja", () => {
+  it("E-AC2: BFS ignora los costos y cruza la franja", () => {
     const config = corridorConfig();
     const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
     const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap(), {
