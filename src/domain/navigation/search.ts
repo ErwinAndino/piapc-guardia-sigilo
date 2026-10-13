@@ -61,11 +61,18 @@ export function findPathBfs(map: GridMap, start: GridPoint, goal: GridPoint): Se
   return failureResult("bfs", "unreachable", explored, maximumFrontier);
 }
 
-export function findPathAStar(map: GridMap, start: GridPoint, goal: GridPoint): SearchResult {
+export function findPathAStar(
+  map: GridMap,
+  start: GridPoint,
+  goal: GridPoint,
+  entryCosts?: ReadonlyMap<string, number>,
+): SearchResult {
   const invalid = validateEndpoints("astar", map, start, goal);
   if (invalid) {
     return invalid;
   }
+
+  const costOf = (point: GridPoint): number => entryCosts?.get(cellKey(point)) ?? 1;
 
   let insertionOrder = 0;
   const startKey = cellKey(start);
@@ -89,7 +96,7 @@ export function findPathAStar(map: GridMap, start: GridPoint, goal: GridPoint): 
     explored.push(current.point);
 
     if (samePoint(current.point, goal)) {
-      return successResult("astar", start, goal, parents, explored, maximumFrontier);
+      return successResult("astar", start, goal, parents, explored, maximumFrontier, costOf);
     }
 
     for (const neighbor of walkableNeighbors(map, current.point)) {
@@ -98,7 +105,7 @@ export function findPathAStar(map: GridMap, start: GridPoint, goal: GridPoint): 
         continue;
       }
 
-      const candidateCost = current.cost + 1;
+      const candidateCost = current.cost + costOf(neighbor);
       const knownCost = bestCosts.get(neighborKey);
       if (knownCost === undefined || candidateCost < knownCost) {
         insertionOrder += 1;
@@ -167,13 +174,17 @@ function successResult(
   parents: ReadonlyMap<string, GridPoint>,
   explored: readonly GridPoint[],
   maximumFrontier: number,
+  costOf?: (point: GridPoint) => number,
 ): SearchResult {
   const path = reconstructPath(start, goal, parents);
+  const totalCost = costOf
+    ? path.slice(1).reduce((sum, point) => sum + costOf(point), 0)
+    : path.length - 1;
   return {
     algorithm,
     status: "success",
     path,
-    totalCost: path.length - 1,
+    totalCost,
     expandedNodes: explored.length,
     maximumFrontier,
     explored,
