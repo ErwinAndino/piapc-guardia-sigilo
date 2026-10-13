@@ -115,6 +115,28 @@ A-AC2: sin franja lenta, resultado de 4 pasos y costo 4.
 A-AC3: prueba del consumidor confirma que usa el modo ponderado y obtiene
 costo 6 con franja; el modo unitario existente conserva su funcionamiento.
 
-Fuera de alcance: modificar velocidad, crear terrenos gráficos o editar niveles.
+Fuera de alcance: modificar velocidad o editar la geometría jugable. Excepción
+aprobada (2026-10-13): marcar visualmente el terreno lento y conectar los costos
+con el consumidor de simulación, según la extensión de abajo.
 Evidencia: prueba de franja, prueba de restauración, comparación de costos y
 prueba de consumidor; registrar en evidencia.md.
+
+## Extensión aprobada: terreno lento en la simulación y su marca visual
+
+Decisión humana (2026-10-13): llevar el modo ponderado al consumidor de
+simulación real y hacer visible la zona lenta para poder observarla en la
+escena. Excede el "fuera de alcance" original del anexo; se autoriza como
+extensión acotada.
+
+E-01: definir el terreno lento del laboratorio como una franja en `y=17`,
+x=5..24, con costo de entrada 5, restringida a celdas transitables.
+E-02: el consumidor de simulación (`updateGuardSimulation`) recibe los costos
+por configuración explícita y los propaga a la búsqueda; BFS conserva su
+semántica unitaria.
+E-03: la escena marca visualmente las celdas lentas con una capa bajo los muros
+y muestra una leyenda en el HUD; no se altera velocidad ni geometría jugable.
+
+Criterios:
+E-AC1: con A\* el guardia evita la franja lenta; sin costos la cruza.
+E-AC2: BFS ignora los costos y cruza la franja.
+E-AC3: la franja se dibuja en `GameScene` y la leyenda indica celdas y costo.

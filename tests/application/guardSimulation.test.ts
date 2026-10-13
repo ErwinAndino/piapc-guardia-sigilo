@@ -11,6 +11,7 @@ import {
 import { cellCenter, createGridMap, worldToCell, type GridMap, type GridPoint } from "../../src/domain/model/grid";
 import { latestTransitions } from "../../src/domain/telemetry/telemetry";
 import { effectiveMap } from "../../src/domain/model/doors";
+import type { SearchAlgorithm } from "../../src/domain/navigation/search";
 
 const TILE = 16;
 
@@ -34,7 +35,13 @@ function tick(
   timeMs: number,
   config: GuardConfig,
   map: GridMap,
-  options: { sound?: boolean; deltaMs?: number; covered?: boolean } = {},
+  options: {
+    sound?: boolean;
+    deltaMs?: number;
+    covered?: boolean;
+    algorithm?: SearchAlgorithm;
+    entryCosts?: ReadonlyMap<string, number>;
+  } = {},
 ): GuardSimulationUpdate {
   return updateGuardSimulation(state, {
     map,
@@ -43,7 +50,8 @@ function tick(
     playerSoundRequested: options.sound ?? false,
     timeMs,
     deltaMs: options.deltaMs ?? 16,
-    algorithm: "astar",
+    algorithm: options.algorithm ?? "astar",
+    entryCosts: options.entryCosts,
     playerCovered: options.covered ?? false,
   }, config);
 }
@@ -262,5 +270,62 @@ describe("guard simulation", () => {
 
     expect(update.state.planFailed).toBe(false);
     expect(cells.some((cell) => cell.x === 2 && cell.y === 2)).toBe(true);
+  });
+});
+
+describe("terreno lento en el consumidor de simulación", () => {
+  function corridorConfig(): GuardConfig {
+    return { ...testConfig(), patrolPoints: [{ x: 8, y: 1 }] };
+  }
+
+  function slowMap(): GridMap {
+    return createGridMap(9, 3, []);
+  }
+
+  function slowCosts(): ReadonlyMap<string, number> {
+    const costs = new Map<string, number>();
+    for (let x = 1; x <= 7; x += 1) {
+      costs.set(`${x},1`, 5);
+    }
+    return costs;
+  }
+
+  function routeCells(update: GuardSimulationUpdate): GridPoint[] {
+    return update.state.waypoints.map((waypoint) => worldToCell(waypoint, TILE));
+  }
+
+  function crossesSlowTerrain(cells: readonly GridPoint[], costs: ReadonlyMap<string, number>): boolean {
+    return cells.some((cell) => costs.has(`${cell.x},${cell.y}`));
+  }
+
+  it("A-AC3: con costos el guardia evita la franja lenta", () => {
+    const config = corridorConfig();
+    const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
+    const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap(), {
+      entryCosts: slowCosts(),
+    });
+
+    expect(update.state.planFailed).toBe(false);
+    expect(update.state.waypoints.length).toBeGreaterThan(0);
+    expect(crossesSlowTerrain(routeCells(update), slowCosts())).toBe(false);
+  });
+
+  it("A-AC2: sin costos el guardia cruza la franja (mínimo unitario)", () => {
+    const config = corridorConfig();
+    const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
+    const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap());
+
+    expect(crossesSlowTerrain(routeCells(update), slowCosts())).toBe(true);
+  });
+
+  it("A-01: BFS ignora los costos y cruza la franja", () => {
+    const config = corridorConfig();
+    const state = createInitialGuardState(cellCenter({ x: 0, y: 1 }, TILE), TILE, config);
+    const update = tick(state, { x: 8, y: 2 }, 16, config, slowMap(), {
+      algorithm: "bfs",
+      entryCosts: slowCosts(),
+    });
+
+    expect(crossesSlowTerrain(routeCells(update), slowCosts())).toBe(true);
   });
 });

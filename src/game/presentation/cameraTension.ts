@@ -4,14 +4,40 @@ import { assertFiniteVector, type Vector2 } from "../../domain/model/vector";
 export const ZOOM_BASE = 1;
 export const ZOOM_PURSUE = 1.15;
 export const ZOOM_SMOOTH_FACTOR = 0.08;
+export const HOLD_AFTER_PURSUIT_MS = 2500;
 export const initialZoom = ZOOM_BASE;
+export const initialPursuitHoldMs = 0;
 
 function clampZoom(zoom: number): number {
   return Math.min(ZOOM_PURSUE, Math.max(ZOOM_BASE, zoom));
 }
 
-export function zoomTargetFor(state: GuardStateName): number {
-  return state === "pursuing" ? ZOOM_PURSUE : ZOOM_BASE;
+export function advancePursuitHold(
+  currentMs: number,
+  pursuing: boolean,
+  deltaMs: number,
+  holdMs: number = HOLD_AFTER_PURSUIT_MS,
+): number {
+  if (!Number.isFinite(currentMs) || !Number.isFinite(deltaMs) || !Number.isFinite(holdMs)) {
+    throw new Error("Pursuit hold values must be finite.");
+  }
+  if (deltaMs < 0) {
+    throw new Error("Pursuit hold delta must be non-negative.");
+  }
+  if (holdMs < 0) {
+    throw new Error("Pursuit hold duration must be non-negative.");
+  }
+  if (pursuing) {
+    return holdMs;
+  }
+  return Math.min(holdMs, Math.max(0, currentMs - deltaMs));
+}
+
+export function zoomTargetFor(state: GuardStateName, holdRemainingMs = 0): number {
+  if (!Number.isFinite(holdRemainingMs)) {
+    throw new Error("Pursuit hold remaining time must be finite.");
+  }
+  return state === "pursuing" || holdRemainingMs > 0 ? ZOOM_PURSUE : ZOOM_BASE;
 }
 
 export function cameraFocus(zoom: number, player: Vector2, mapCenter: Vector2): Vector2 {

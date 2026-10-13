@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  HOLD_AFTER_PURSUIT_MS,
   ZOOM_BASE,
   ZOOM_PURSUE,
   ZOOM_SMOOTH_FACTOR,
+  advancePursuitHold,
   advanceZoom,
   cameraFocus,
+  initialPursuitHoldMs,
   initialZoom,
   zoomTargetFor,
 } from "../../src/game/presentation/cameraTension";
@@ -44,6 +47,11 @@ describe("zoom constants", () => {
     expect(ZOOM_SMOOTH_FACTOR).toBeLessThanOrEqual(1);
     expect(initialZoom).toBe(ZOOM_BASE);
   });
+
+  it("declares a positive hold after pursuit and a clean initial hold", () => {
+    expect(HOLD_AFTER_PURSUIT_MS).toBe(2500);
+    expect(initialPursuitHoldMs).toBe(0);
+  });
 });
 
 describe("zoom target by state", () => {
@@ -62,6 +70,52 @@ describe("zoom target by state", () => {
     for (const state of ALL_STATES) {
       expect(Number.isFinite(zoomTargetFor(state))).toBe(true);
     }
+  });
+
+  it("keeps the pursue target while the hold is active in any state", () => {
+    for (const state of ALL_STATES) {
+      expect(zoomTargetFor(state, HOLD_AFTER_PURSUIT_MS)).toBe(ZOOM_PURSUE);
+    }
+    expect(zoomTargetFor("patrolling", initialPursuitHoldMs)).toBe(ZOOM_BASE);
+  });
+
+  it("rejects a non-finite hold remaining time", () => {
+    expect(() => zoomTargetFor("patrolling", Number.NaN)).toThrow();
+    expect(() => zoomTargetFor("patrolling", Number.POSITIVE_INFINITY)).toThrow();
+  });
+});
+
+describe("pursuit hold", () => {
+  it("refreshes the full hold while pursuing", () => {
+    expect(advancePursuitHold(0, true, 16, HOLD_AFTER_PURSUIT_MS)).toBe(HOLD_AFTER_PURSUIT_MS);
+    expect(advancePursuitHold(900, true, 16, HOLD_AFTER_PURSUIT_MS)).toBe(HOLD_AFTER_PURSUIT_MS);
+  });
+
+  it("drains by the simulation delta and never goes below zero", () => {
+    expect(advancePursuitHold(HOLD_AFTER_PURSUIT_MS, false, 500, HOLD_AFTER_PURSUIT_MS)).toBe(2000);
+    expect(advancePursuitHold(300, false, 500, HOLD_AFTER_PURSUIT_MS)).toBe(0);
+    expect(advancePursuitHold(0, false, 500, HOLD_AFTER_PURSUIT_MS)).toBe(0);
+  });
+
+  it("resets to the full hold when pursuit resumes inside the window", () => {
+    let hold = advancePursuitHold(0, true, 16, HOLD_AFTER_PURSUIT_MS);
+    hold = advancePursuitHold(hold, false, 2000, HOLD_AFTER_PURSUIT_MS);
+    expect(hold).toBe(500);
+    hold = advancePursuitHold(hold, true, 16, HOLD_AFTER_PURSUIT_MS);
+    expect(hold).toBe(HOLD_AFTER_PURSUIT_MS);
+  });
+
+  it("supports a zero-duration hold", () => {
+    expect(advancePursuitHold(0, true, 16, 0)).toBe(0);
+    expect(advancePursuitHold(0, false, 16, 0)).toBe(0);
+  });
+
+  it("rejects non-finite values and negative intervals", () => {
+    expect(() => advancePursuitHold(Number.NaN, false, 16, 100)).toThrow();
+    expect(() => advancePursuitHold(0, false, Number.NaN, 100)).toThrow();
+    expect(() => advancePursuitHold(0, false, 16, Number.POSITIVE_INFINITY)).toThrow();
+    expect(() => advancePursuitHold(0, false, -16, 100)).toThrow();
+    expect(() => advancePursuitHold(0, false, 16, -1)).toThrow();
   });
 });
 
@@ -146,5 +200,57 @@ describe("zoom advance", () => {
     expect(() => advanceZoom(Number.NaN, ZOOM_PURSUE, 0.1)).toThrow();
     expect(() => advanceZoom(ZOOM_BASE, Number.POSITIVE_INFINITY, 0.1)).toThrow();
     expect(() => advanceZoom(ZOOM_BASE, ZOOM_PURSUE, Number.NaN)).toThrow();
+  });
+});
+
+describe("zoom with pursuit hold", () => {
+  const DELTA = 16;
+
+  function stepFrame(
+    zoom: number,
+    hold: number,
+    pursuing: boolean,
+  ): { zoom: number; hold: number } {
+    const nextHold = advancePursuitHold(hold, pursuing, DELTA, HOLD_AFTER_PURSUIT_MS);
+    const nextZoom = advanceZoom(
+      zoom,
+      zoomTargetFor(pursuing ? "pursuing" : "searching", nextHold),
+      ZOOM_SMOOTH_FACTOR,
+    );
+    return { zoom: nextZoom, hold: nextHold };
+  }
+
+  it("keeps the pursue zoom during the hold and returns to base afterwards", () => {
+    let zoom = initialZoom;
+    let hold = initialPursuitHoldMs;
+    for (let index = 0; index < 300; index += 1) {
+      ({ zoom, hold } = stepFrame(zoom, hold, true));
+    }
+    expect(zoom).toBeCloseTo(ZOOM_PURSUE, 6);
+
+    for (let index = 0; index < 100; index += 1) {
+      ({ zoom, hold } = stepFrame(zoom, hold, false));
+    }
+    expect(hold).toBeGreaterThan(0);
+    expect(zoom).toBeCloseTo(ZOOM_PURSUE, 6);
+
+    for (let index = 0; index < 300; index += 1) {
+      ({ zoom, hold } = stepFrame(zoom, hold, false));
+    }
+    expect(hold).toBe(0);
+    expect(zoom).toBeCloseTo(ZOOM_BASE, 6);
+  });
+
+  it("does not bounce when pursuit flickers inside the hold window", () => {
+    let zoom = initialZoom;
+    let hold = initialPursuitHoldMs;
+    for (let index = 0; index < 300; index += 1) {
+      ({ zoom, hold } = stepFrame(zoom, hold, true));
+    }
+    for (let index = 0; index < 600; index += 1) {
+      ({ zoom, hold } = stepFrame(zoom, hold, index % 80 === 0));
+      expect(withinRange(zoom)).toBe(true);
+      expect(zoom).toBeGreaterThan(ZOOM_BASE);
+    }
   });
 });

@@ -3,9 +3,12 @@ import {
   GUARD_START,
   GRID_HEIGHT,
   GRID_WIDTH,
+  LAB_ENTRY_COSTS,
   LAB_MAP,
+  LAB_SLOW_CELLS,
   PATROL_POINTS,
   PLAYER_START,
+  SLOW_TERRAIN_COST,
   TILE_SIZE,
   DOOR_CELLS,
 } from "../../application/simulation/labLevel";
@@ -52,13 +55,17 @@ import {
   type AlertImpactState,
 } from "../presentation/alertImpact";
 import {
+  HOLD_AFTER_PURSUIT_MS,
   ZOOM_BASE,
   ZOOM_SMOOTH_FACTOR,
+  advancePursuitHold,
   advanceZoom,
   cameraFocus,
+  initialPursuitHoldMs,
   zoomTargetFor,
 } from "../presentation/cameraTension";
 import { doorHintFor, doorsHudLine, doorStyleFor } from "../presentation/doorStyle";
+import { slowTerrainHudLine, slowTerrainStyleFor } from "../presentation/slowTerrainStyle";
 import { doorInteraction, effectiveMap } from "../../domain/model/doors";
 
 const PLAYER_SPEED = 190;
@@ -90,6 +97,7 @@ export class GameScene extends Phaser.Scene {
   private stepKey!: Phaser.Input.Keyboard.Key;
   private coverKey!: Phaser.Input.Keyboard.Key;
   private patrolGraphics!: Phaser.GameObjects.Graphics;
+  private terrainGraphics!: Phaser.GameObjects.Graphics;
   private navigationGraphics!: Phaser.GameObjects.Graphics;
   private perceptionGraphics!: Phaser.GameObjects.Graphics;
   private sightLineGraphics!: Phaser.GameObjects.Graphics;
@@ -113,6 +121,7 @@ export class GameScene extends Phaser.Scene {
   };
   private lastSoundHeard = false;
   private tensionZoom = ZOOM_BASE;
+  private pursuitHoldMs = initialPursuitHoldMs;
   private coverAdjacent = false;
   private playerCovered = false;
   private openDoors: Set<string> = new Set();
@@ -136,10 +145,13 @@ export class GameScene extends Phaser.Scene {
     this.impactActive = false;
     this.cameras.main.setBackgroundColor("#10161c");
     this.tensionZoom = ZOOM_BASE;
+    this.pursuitHoldMs = initialPursuitHoldMs;
     this.cameras.main.setZoom(ZOOM_BASE);
     this.cameras.main.centerOn(MAP_CENTER.x, MAP_CENTER.y);
     this.openDoors = new Set();
     this.drawGrid();
+    this.terrainGraphics = this.add.graphics().setDepth(0.5);
+    this.drawSlowTerrain();
 
     this.wallsGroup = this.physics.add.staticGroup();
     this.doorsGroup = this.physics.add.staticGroup();
@@ -362,6 +374,7 @@ export class GameScene extends Phaser.Scene {
       timeMs: time,
       deltaMs: delta,
       algorithm: this.algorithm,
+      entryCosts: LAB_ENTRY_COSTS,
     });
     this.guardState = update.state;
     this.guard.setPosition(update.state.position.x, update.state.position.y);
@@ -396,11 +409,18 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.applyTensionZoom();
+    this.applyTensionZoom(delta);
   }
 
-  private applyTensionZoom(): void {
-    const target = zoomTargetFor(this.guardState.behavior.name);
+  private applyTensionZoom(deltaMs: number): void {
+    const state = this.guardState.behavior.name;
+    this.pursuitHoldMs = advancePursuitHold(
+      this.pursuitHoldMs,
+      state === "pursuing",
+      deltaMs,
+      HOLD_AFTER_PURSUIT_MS,
+    );
+    const target = zoomTargetFor(state, this.pursuitHoldMs);
     this.tensionZoom = advanceZoom(this.tensionZoom, target, ZOOM_SMOOTH_FACTOR);
     const focus = cameraFocus(this.tensionZoom, this.player, MAP_CENTER);
     this.cameras.main.centerOn(focus.x, focus.y);
@@ -485,6 +505,20 @@ export class GameScene extends Phaser.Scene {
     }
     for (let y = 0; y <= GRID_HEIGHT; y += 1) {
       graphics.lineBetween(0, y * TILE_SIZE, GRID_WIDTH * TILE_SIZE, y * TILE_SIZE);
+    }
+  }
+
+  private drawSlowTerrain(): void {
+    const style = slowTerrainStyleFor(SLOW_TERRAIN_COST);
+    this.terrainGraphics.clear();
+    this.terrainGraphics.fillStyle(style.fill, style.alpha);
+    this.terrainGraphics.lineStyle(style.strokeWidth, style.stroke, Math.min(1, style.alpha + 0.25));
+    for (const cell of LAB_SLOW_CELLS) {
+      const center = cellCenter(cell, TILE_SIZE);
+      const left = center.x - TILE_SIZE / 2;
+      const top = center.y - TILE_SIZE / 2;
+      this.terrainGraphics.fillRect(left, top, TILE_SIZE, TILE_SIZE);
+      this.terrainGraphics.strokeRect(left, top, TILE_SIZE, TILE_SIZE);
     }
   }
 
@@ -638,6 +672,7 @@ export class GameScene extends Phaser.Scene {
       `cobertura ${coverLabel(this.coverAdjacent, this.playerCovered)}`,
       `sonido ${sound}`,
       doorsHudLine(this.openDoors.size, DOOR_CELLS.length, hint),
+      slowTerrainHudLine(LAB_SLOW_CELLS.length, SLOW_TERRAIN_COST),
       memory,
       ...transitions,
     ]);

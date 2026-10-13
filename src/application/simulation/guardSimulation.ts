@@ -72,6 +72,7 @@ export interface GuardSimulationInput {
   readonly timeMs: number;
   readonly deltaMs: number;
   readonly algorithm: SearchAlgorithm;
+  readonly entryCosts?: ReadonlyMap<string, number>;
   readonly playerCovered?: boolean;
 }
 
@@ -216,7 +217,7 @@ export function updateGuardSimulation(
     && cellEquals(guardCell, previous.goalCell);
 
   const nearestPatrolIndex = previous.behavior.name === "returning"
-    ? nearestReachablePatrolIndex(input.map, guardCell, config.patrolPoints)
+    ? nearestReachablePatrolIndex(input.map, guardCell, config.patrolPoints, input.entryCosts)
     : null;
 
   const decision = updateGuardBehavior(previous.behavior, {
@@ -277,7 +278,7 @@ export function updateGuardSimulation(
     const goalChanged = goalCell === null || !cellEquals(targetCell, goalCell);
 
     if (goalChanged || previous.waypoints.length === 0 || routeInvalidated) {
-      const plan = calculateRoute(input.map, guardCell, targetCell, input.algorithm);
+      const plan = calculateRoute(input.map, guardCell, targetCell, input.algorithm, input.entryCosts);
       if (plan.status === "success") {
         const cells = plan.path.map((point) => cellCenter(point, input.tileSize));
         waypoints = [{ ...position }, ...cells.slice(1)];
@@ -327,6 +328,7 @@ function nearestReachablePatrolIndex(
   map: GridMap,
   from: GridPoint,
   patrolPoints: readonly GridPoint[],
+  entryCosts?: ReadonlyMap<string, number>,
 ): number | null {
   let bestIndex: number | null = null;
   let bestCost = Number.POSITIVE_INFINITY;
@@ -336,7 +338,7 @@ function nearestReachablePatrolIndex(
     if (!point) {
       continue;
     }
-    const result = findPathAStar(map, from, point);
+    const result = findPathAStar(map, from, point, entryCosts);
     if (result.status === "success" && result.totalCost !== null && result.totalCost < bestCost) {
       bestCost = result.totalCost;
       bestIndex = index;

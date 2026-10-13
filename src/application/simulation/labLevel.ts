@@ -1,4 +1,4 @@
-import { createGridMap, type GridPoint } from "../../domain/model/grid";
+import { cellKey, createGridMap, isWalkable, type GridPoint } from "../../domain/model/grid";
 
 export const TILE_SIZE = 32;
 export const GRID_WIDTH = 30;
@@ -38,6 +38,12 @@ const BLOCKED_AREAS: readonly BlockedRectangle[] = [
   { x: 8, y: 15, width: 17, height: 1 },
 ];
 
+export const SLOW_TERRAIN_COST = 5;
+
+const SLOW_TERRAIN_AREAS: readonly BlockedRectangle[] = [
+  { x: 5, y: 17, width: 20, height: 1 },
+];
+
 function expandAreas(areas: readonly BlockedRectangle[]): GridPoint[] {
   const cells: GridPoint[] = [];
 
@@ -53,3 +59,10 @@ function expandAreas(areas: readonly BlockedRectangle[]): GridPoint[] {
 }
 
 export const LAB_MAP = createGridMap(GRID_WIDTH, GRID_HEIGHT, expandAreas(BLOCKED_AREAS));
+
+export const LAB_SLOW_CELLS: readonly GridPoint[] = expandAreas(SLOW_TERRAIN_AREAS)
+  .filter((cell) => isWalkable(LAB_MAP, cell));
+
+export const LAB_ENTRY_COSTS: ReadonlyMap<string, number> = new Map(
+  LAB_SLOW_CELLS.map((cell) => [cellKey(cell), SLOW_TERRAIN_COST]),
+);
