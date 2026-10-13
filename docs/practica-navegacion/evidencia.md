@@ -1,8 +1,8 @@
 # Evidencia — práctica de navegación
 
-Repositorio: [PENDIENTE: sin remoto confirmado]
+Repositorio: https://github.com/ErwinAndino/piapc-guardia-sigilo (rama Práctica-guiada-especificar-y-verificar-una-navegación)
 Commit inicial: 74c33ba80108932ecab7976ec806e60e84db6e39
-Commit de implementación: [PENDIENTE]
+Commit de implementación: ffc566b83bee5e7888c3162670938312bea460a7
 Versión de entrega: commit informado por el estudiante en la plataforma.
 Variante: A
 Herramienta/modelo o trabajo manual: opencode (agente de desarrollo) + revisión humana.
@@ -42,14 +42,14 @@ Dijkstra: extraer S=0 descubre A=1 y B=3; extraer A=1 descubre G=10; extraer B=3
 | A-AC1 | `npx vitest run tests/navigation/search.test.ts` (`A-AC1`) | directa unitaria = 4 pasos y costo ponderado 16; ponderada = rodeo de 6 pasos, costo 6, sin celdas de la franja | cumple |
 | A-AC2 | `npx vitest run tests/navigation/search.test.ts` (`A-AC2`) | sin costos, A* conserva 4 pasos y costo 4 | cumple |
 | A-AC3 | `npx vitest run tests/application/navigationDemo.test.ts` | `calculateRoute` con costos obtiene 6/6; sin costos conserva 4/4; BFS ignora costos | cumple |
-| BASE-AC5 | `npm run validate` + `git diff --stat` | 19 archivos / 178 pruebas y build OK; diff acotado a navegación, su consumidor y pruebas previstas | cumple |
-| BASE-AC6 | URL y commit final | repositorio pendiente de remoto; commit final a cargo del estudiante | pendiente |
+| BASE-AC5 | `npm run validate` + `git diff --stat` | 19 archivos / 188 pruebas y build OK; diff acotado a navegación, su consumidor y pruebas previstas | cumple |
+| BASE-AC6 | URL y commit final | repositorio/rama confirmados; implementación en `ffc566b83bee5e7888c3162670938312bea460a7`; `push` pendiente de autorización | cumple (local) |
 
 ## Registro mínimo de intervención
 Prompts: recorrido completo de los pasos 1 a 8 de la guía con la variante A; el único cambio relevante respecto del A* previo es un parámetro opcional de costos de entrada (`entryCosts`) y la suma real de `totalCost`.
 Decisión tras incremento 1: aceptar — A* ponderado con prueba de franja, restauración y caso unitario; 15 pruebas en `tests/navigation/search.test.ts`, diff mínimo y typecheck limpio.
 Decisión tras incremento 2: aceptar — `calculateRoute` propaga los costos de forma explícita; prueba de consumidor 4/4 y el modo unitario existente intacto.
-Validación final: `npm run validate` = typecheck + `vitest run` (19 archivos / 178 pruebas) + `vite build`, todo correcto.
+Validación final: `npm run validate` = typecheck + `vitest run` (19 archivos / 188 pruebas) + `vite build`, todo correcto.
 Diff revisado: `src/domain/navigation/search.ts`, `src/application/simulation/navigationDemo.ts`, `tests/navigation/search.test.ts`; nuevos `tests/navigation/fixture5x3.test.ts`, `tests/application/navigationDemo.test.ts` y `docs/practica-navegacion/`. Sin cambios en FSM, percepción, grid, puertas ni escena.
 Conclusión: en el mapa libre unitario BFS y A* coinciden en 4 pasos y costo 4, pero A* expande menos nodos (5 frente a 12). Con la franja lenta de costo 5, la ruta más corta por pasos (4 pasos, costo 16) deja de ser la preferida y el A* ponderado elige un rodeo de 6 pasos con costo 6, respetando la intención de minimizar costo. La capacidad se reutilizó extendiendo el A* existente con un mapa opcional de costos de entrada, sin algoritmo nuevo y sin alterar BFS ni el caso unitario. Por eso, para terreno lento conviene A* ponderado y no BFS, que sólo cuenta pasos.
-Limitaciones: el repositorio sigue sin remoto confirmado y el commit final lo crea el estudiante; la simulación completa (`guardSimulation`) no consume todavía perfiles de costo, ya que el alcance fija `calculateRoute` como consumidor de navegación. No se agregó instrumentación de telemetría.
+Limitaciones: el remoto `origin` existe, pero el `push` requiere autorización explícita; la simulación completa (`guardSimulation`) no consume todavía perfiles de costo, ya que el alcance fija `calculateRoute` como consumidor de navegación. No se agregó instrumentación de telemetría.
